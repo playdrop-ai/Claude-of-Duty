@@ -481,7 +481,6 @@ function furnishShop(A, rng, r, cx, cz, w, d, m) {
   A.put('barrel_wood', x1 - 0.6, y, z0 + 0.7, rng.float() * 6.28, 1, [1, 1.2, 1]);
   A.put('table_small', cx - w * 0.28, y, cz - d * 0.28, rng.range(-0.4, 0.4), 1, [1, 1, 1]);
   A.put('chair', cx - w * 0.28 + 0.7, y, cz - d * 0.2, rng.range(2, 4), 1, [1, 1.2, 1]);
-  A.box('wood', cx - w * 0.28, y + 0.4, cz - d * 0.28, 1.0, 0.8, 0.8);
 }
 
 // ----------------------------------------------------------------- living --
@@ -506,7 +505,6 @@ function furnishLiving(A, rng, r, cx, cz, w, d, m) {
     );
   }
   A.put('cabinet', x1 - 0.35, y, cz + rng.range(-0.6, 0.6), -Math.PI / 2, 1, [1, 1, 1]);
-  A.box('wood', x1 - 0.35, y + 0.6, cz, 0.5, 1.2, 0.9);
   A.put('table_small', cx + 0.4, y, cz - 0.8, rng.range(0, 0.4), 1, [1, 1, 1]);
   A.put('chair', cx - 0.8, y, cz - 1.2, rng.range(1.5, 2.5), 1, [1, 1.2, 1]);
   A.put('chair', cx + 1.4, y, cz - 0.4, rng.range(-1.5, -0.5), 1, [1, 1.2, 1]);
@@ -543,7 +541,6 @@ function furnishStorage(A, rng, r, cx, cz, w, d, m) {
           [1, 1.2, 1]
         );
       }
-      A.box('wood', sx, y + 0.1, sz, 1.2, 0.2, 1.0);
     } else if (pick < 0.72) {
       A.put(rng.pick(['barrel_rust', 'barrel_blue', 'barrel_wood']), sx, y, sz, rng.float() * 6.28, 1, [
         1, 1.2, 1,
@@ -644,7 +641,6 @@ export function stackCrates(A, rng, x, y, z, n) {
       s,
       [1, rng.range(0.7, 1.4), 1]
     );
-    A.box('wood', x, cy + (hh * s) / 2, z, 0.7, hh * s, 0.7);
     cy += hh * s;
     if (rng.float() < 0.2) break;
   }

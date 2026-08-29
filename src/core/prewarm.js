@@ -150,6 +150,10 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
   const prevRt = renderer.getRenderTarget();
   const prevFace = renderer.getActiveCubeFace?.() ?? 0;
   const prevMip = renderer.getActiveMipmapLevel?.() ?? 0;
+  const savedLights = render.lights.map((entry) => ({
+    entry, intensity: entry.light.intensity, visible: entry.light.visible,
+    baseIntensity: entry.baseIntensity, applied: entry.applied,
+  }));
 
   const compile = async () => {
     // compileAsync is non-blocking where KHR_parallel_shader_compile exists.
@@ -163,14 +167,25 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
         renderer.compile(engine.scene, engine.camera);
         renderer.compile(engine.viewScene, engine.viewCamera);
       } catch { /* nothing more we can do; boot must still proceed */ }
-    } finally {
-      renderer.setRenderTarget(prevRt, prevFace, prevMip);
     }
   };
 
   const yieldFrame = () => new Promise((r) => requestAnimationFrame(r));
 
   try {
+    // Match the first rendered frame BEFORE compiling. Otherwise the initial
+    // scene has every practical light visible and the fallback sun still on;
+    // all of those programs are discarded when gameplay applies its light cull.
+    cam.updateMatrixWorld(true);
+    engine.ctx.peek('world')?._stabiliseLightCount(engine.ctx);
+    render._cullLights(cam.position);
+    render._collect(engine.scene);
+    render._syncSun(cam);
+    if (engine.viewScene.environment === null) {
+      engine.viewScene.environment = engine.scene.environment;
+      render._assignedViewEnv = engine.scene.environment;
+    }
+
     let step = 0;
     const totalSteps = WARM_POSES.length * 2 + (transients ? transientStages.length : 0) + 1;
     const tick = () => onProgress(Math.min(1, ++step / totalSteps));
@@ -210,7 +225,7 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
     //           compiled at the stabilised light count. +35 programs.
     //   ai      the 26 character materials and their skinned + depth variants,
     //           against a dummy SkinnedMesh on the real skeleton. +7 programs.
-    //           (ai also calls this itself at the end of init(); it is idempotent.)
+    //           AI deliberately waits for this final-lighting/HDR stage.
     //
     // None of them draws a gameplay frame, steps the engine, touches the clock or
     // the RNG, so none of the restore machinery above applies to them — which is
@@ -240,6 +255,8 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
     for (const sys of hooks) {
       const id = sys.constructor?.id ?? '?';
       try {
+        // Subsystem hooks must compile for HDR too, not the canvas variant.
+        renderer.setRenderTarget(scratchRt);
         const arg = sys === renderSys ? { post: true, shadow: RENDER_SHADOW_WARM } : engine.ctx;
         hookResults[id] = (await sys.prewarmMaterials(arg)) ?? { ok: true };
       } catch (err) {
@@ -285,6 +302,14 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
     r._spare = savedRng.spare;
     engine._accum = savedAccum;
     engine._last = performance.now();
+    // _cullLights also records intensity ownership. Do not let a compile-only
+    // cull change how the first gameplay update adopts animated lamp values.
+    for (const { entry, intensity, visible, baseIntensity, applied } of savedLights) {
+      entry.light.intensity = intensity;
+      entry.light.visible = visible;
+      entry.baseIntensity = baseIntensity;
+      entry.applied = applied;
+    }
     renderer.setRenderTarget(prevRt, prevFace, prevMip);
     scratchRt.dispose();
   }

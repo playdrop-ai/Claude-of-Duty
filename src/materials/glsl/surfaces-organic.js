@@ -256,6 +256,22 @@ void owSurface(vec2 uv, out vec3 alb, out float h, out float rough, out float me
 }
 `;
 
+// Palm silhouettes are geometry, not a grid of disconnected broadleaf cutouts.
+export const PALM_LEAF = /* glsl */ `
+void owSurface(vec2 uv, out vec3 alb, out float h, out float rough, out float metal, out float ao){
+  float rib = 1.0 - smoothstep(0.015, 0.08, abs(uv.y - 0.5));
+  float veins = 0.5 + 0.5 * sin(uv.y * 100.53096 + uv.x * 6.28318);
+  float dry = smoothstep(0.65, 1.0, uv.x) * 0.35;
+  vec3 green = owSRGB(vec3(0.24, 0.31, 0.10));
+  vec3 gold = owSRGB(vec3(0.39, 0.32, 0.11));
+  alb = mix(green, gold, dry) * (0.88 + 0.12 * veins + 0.15 * rib);
+  h = 0.4 + rib * 0.25 + veins * 0.025;
+  rough = 0.65 + (1.0 - veins) * 0.08;
+  metal = 0.0;
+  ao = 0.95;
+}
+`;
+
 export const FOLIAGE = /* glsl */ `
 void owSurface(vec2 uv, out vec3 alb, out float h, out float rough, out float metal, out float ao){
   const vec2 P = vec2(8.0);

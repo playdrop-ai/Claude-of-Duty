@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONCRETE, BRICK, PLASTER, TILE } from './glsl/surfaces-arch.js';
 import { ASPHALT, SAND, DIRT, GRAVEL } from './glsl/surfaces-ground.js';
 import { METAL_RUST, METAL_PAINTED, METAL_BRUSHED, CORRUGATED } from './glsl/surfaces-metal.js';
-import { WOOD, FABRIC, BURLAP, FOLIAGE, RUBBER, GLASS } from './glsl/surfaces-organic.js';
+import { WOOD, FABRIC, BURLAP, PALM_LEAF, FOLIAGE, RUBBER, GLASS } from './glsl/surfaces-organic.js';
 
 /**
  * The surface library.
@@ -317,6 +317,25 @@ export const LIBRARY = {
       cloth: [0.06, 0.86, 0.10, 0],
     },
     three: { physical: true, sheen: 0.4, sheenRoughness: 0.95, sheenColor: 0x9c8b68 },
+  },
+  palm_leaf: {
+    glsl: PALM_LEAF,
+    surface: 'foliage',
+    bake: { size: 256, worldSize: 0.6, relief: 0.001, seed: 79 },
+    mat: {
+      uvMode: 'mesh',
+      scale: 1,
+      detail: [4, 0.08, 0.05, 8],
+      macro: [0.16, 0.3, 0.08, 0.6],
+      weather: [0.15, 0.0, 0.0, 0.2],
+    },
+    three: {
+      side: THREE.DoubleSide,
+      physical: true,
+      sheen: 0.3,
+      sheenRoughness: 0.8,
+      sheenColor: 0x9fbd6a,
+    },
   },
   foliage: {
     glsl: FOLIAGE,

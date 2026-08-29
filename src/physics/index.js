@@ -163,6 +163,13 @@ class Collider {
     this.inverse.copy(m).invert();
     return this;
   }
+
+  /** Exact boundary, including the exit when the ray starts inside this shape. */
+  raycast(ox, oy, oz, dx, dy, dz, maxDist) {
+    return this.shape === 'box'
+      ? rayObb(ox, oy, oz, dx, dy, dz, this.inverse.elements, this.hx, this.hy, this.hz, maxDist, true)
+      : rayCapsule(ox, oy, oz, dx, dy, dz, this.ax, this.ay, this.az, this.bx, this.by, this.bz, this.radius, maxDist, true);
+  }
 }
 
 const _v = new THREE.Vector3();
@@ -318,6 +325,18 @@ export class PhysicsSystem {
     this._syncStats();
   }
 
+  setStaticEnabled(handle, enabled) {
+    this.staticWorld.setEnabled(handle, enabled);
+  }
+
+  resetDynamics() {
+    for (const body of this.bodies.bodies) body.active = false;
+    this.bodies.clear();
+    for (const ragdoll of this.ragdolls) ragdoll.dispose();
+    this.ragdolls.length = 0;
+    this.stats.bodies = this.stats.awake = this.stats.ragdolls = 0;
+  }
+
   get triangleCount() {
     return this.staticWorld.triCount;
   }
@@ -470,15 +489,13 @@ export class PhysicsSystem {
     for (let i = 0; i < this.colliders.length; i++) {
       const c = this.colliders[i];
       if (!c.enabled || (c.layer & mask) === 0) continue;
-      const t = c.shape === 'box'
-        ? rayObb(ox, oy, oz, dx, dy, dz, c.inverse.elements, c.hx, c.hy, c.hz, best)
-        : rayCapsule(ox, oy, oz, dx, dy, dz, c.ax, c.ay, c.az, c.bx, c.by, c.bz, c.radius, best);
+      const t = c.raycast(ox, oy, oz, dx, dy, dz, best);
       if (t < 0 || t >= best) continue;
       best = t;
       out.hit = true;
       out.distance = t;
       out.point.set(ox + dx * t, oy + dy * t, oz + dz * t);
-      this._colliderNormal(c, out.point, out.normal, dx, dy, dz);
+      out.frontFace = this._colliderNormal(c, out.point, out.normal, dx, dy, dz);
       out.surfaceIndex = c.surfaceIndex;
       out.object = c.owner;
       out.collider = c;
@@ -487,7 +504,6 @@ export class PhysicsSystem {
       out.body = null;
       out.ragdoll = null;
       out.triangle = -1;
-      out.frontFace = true;
     }
     return best;
   }
@@ -511,7 +527,9 @@ export class PhysicsSystem {
       if (outN.lengthSq() < 1e-12) outN.set(-dx, -dy, -dz);
       else outN.normalize();
     }
-    if (outN.x * dx + outN.y * dy + outN.z * dz > 0) outN.multiplyScalar(-1);
+    const frontFace = outN.x * dx + outN.y * dy + outN.z * dz <= 0;
+    if (!frontFace) outN.multiplyScalar(-1);
+    return frontFace;
   }
 
   _raycastBodies(ox, oy, oz, dx, dy, dz, best, mask, out) {
@@ -713,7 +731,7 @@ export class PhysicsSystem {
     return res;
   }
 
-  emitImpact(px, py, pz, nx, ny, nz, dx, dy, dz, si, damage, exit, hit) {
+  emitImpact(px, py, pz, nx, ny, nz, dx, dy, dz, si, damage, exit, hit, damageActor = true) {
     const p = this._impactPool[this._impactCursor];
     this._impactCursor = (this._impactCursor + 1) % IMPACT_POOL;
     p.point.set(px, py, pz);
@@ -729,13 +747,14 @@ export class PhysicsSystem {
     p.part = hit?.part ?? null;
     this.ctx.events.emit('bullet:impact', p);
 
-    if (p.actor && !exit) {
+    if (p.actor && !exit && damageActor) {
       this.ctx.events.emit('damage:dealt', {
         target: p.actor,
         amount: damage * (hit?.collider?.damageScale ?? 1),
         headshot: hit?.part === 'head',
         killed: false,
         point: p.point,
+        incident: p.incident,
       });
     }
   }

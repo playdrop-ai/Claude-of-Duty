@@ -3,10 +3,10 @@ import { DEG } from './mathx.js';
 /**
  * Weapon data.
  *
- * Ballistics are real: 5.56x45 leaves a 14.5" barrel at ~880 m/s, 9x19 from a
- * 4.5" barrel at ~360 m/s, and both drop under gravity on the way to the
- * target. Rates of fire, magazine capacities and ADS times are the real ones
- * too (an M4A1 is 800 rpm and reaches the optic in about 220 ms).
+ * Projectile speed, gravity, rates of fire and magazine capacities stay
+ * physically grounded. Damage, falloff and handling are role-tuned for this
+ * map: the M4A1 owns mid range, the MPX-9 wins up close, and the P-19 is the
+ * fastest precision secondary.
  *
  * Recoil is split in two, exactly as a modern shooter does it:
  *   - `pattern`  a DETERMINISTIC per-shot camera climb a player can memorise
@@ -33,17 +33,19 @@ export const WEAPON_DEFS = {
     /* --- terminal ballistics --- */
     muzzleVelocity: 880,
     damage: 33,
+    minDamage: 22,
+    damageFalloffStart: 32,
+    damageFalloffEnd: 100,
     penetration: 1.0,
-    dropoff: 0.62,
     maxRange: 420,
     dragK: 0.28,
     tracerEvery: 3,
     /* --- accuracy (degrees) --- */
     spreadHip: 2.05,
-    spreadAds: 0.24,
-    spreadPerShot: 0.3,
-    spreadMax: 3.4,
-    spreadDecay: 3.6,
+    spreadAds: 0.2,
+    spreadPerShot: 0.28,
+    spreadMax: 3.2,
+    spreadDecay: 3.8,
     /* --- recoil --- */
     recoil: {
       pitch: 0.0085, // radians of camera climb per shot
@@ -62,6 +64,10 @@ export const WEAPON_DEFS = {
     /* --- handling (seconds) --- */
     adsTime: 0.22,
     adsFov: 0.74,
+    moveScale: 1,
+    sprintScale: 1,
+    adsMoveScale: 0.5,
+    sprintToFire: 0.22,
     viewFov: 0.86,
     reloadTac: 2.1,
     reloadEmpty: 2.9,
@@ -150,23 +156,22 @@ export const WEAPON_DEFS = {
     caliber: '9x19',
     rpm: 950,
     modes: ['auto', 'semi'],
-    burstCount: 2,
-    burstRpm: 1100,
-    burstDelay: 0.14,
     magSize: 32,
     reserve: 224,
     muzzleVelocity: 400,
-    damage: 24,
+    damage: 25,
+    minDamage: 16,
+    damageFalloffStart: 15,
+    damageFalloffEnd: 55,
     penetration: 0.45,
-    dropoff: 0.48,
     maxRange: 240,
     dragK: 0.42,
     tracerEvery: 4,
-    spreadHip: 2.5,
-    spreadAds: 0.4,
-    spreadPerShot: 0.26,
-    spreadMax: 3.9,
-    spreadDecay: 4.4,
+    spreadHip: 1.45,
+    spreadAds: 0.3,
+    spreadPerShot: 0.24,
+    spreadMax: 3.6,
+    spreadDecay: 4.6,
     recoil: {
       pitch: 0.0058,
       yaw: 0.0026,
@@ -183,6 +188,10 @@ export const WEAPON_DEFS = {
     },
     adsTime: 0.185,
     adsFov: 0.78,
+    moveScale: 1.06,
+    sprintScale: 1.04,
+    adsMoveScale: 0.64,
+    sprintToFire: 0.14,
     viewFov: 0.88,
     reloadTac: 1.85,
     reloadEmpty: 2.5,
@@ -215,23 +224,22 @@ export const WEAPON_DEFS = {
     caliber: '9x19',
     rpm: 460,
     modes: ['semi'],
-    burstCount: 1,
-    burstRpm: 460,
-    burstDelay: 0.1,
     magSize: 17,
     reserve: 68,
     muzzleVelocity: 360,
     damage: 28,
+    minDamage: 18,
+    damageFalloffStart: 20,
+    damageFalloffEnd: 60,
     penetration: 0.35,
-    dropoff: 0.42,
     maxRange: 180,
     dragK: 0.46,
     tracerEvery: 5,
-    spreadHip: 3.1,
-    spreadAds: 0.5,
-    spreadPerShot: 0.42,
-    spreadMax: 4.6,
-    spreadDecay: 5.2,
+    spreadHip: 2.25,
+    spreadAds: 0.22,
+    spreadPerShot: 0.38,
+    spreadMax: 4.2,
+    spreadDecay: 5.4,
     recoil: {
       pitch: 0.0125,
       yaw: 0.0032,
@@ -248,6 +256,10 @@ export const WEAPON_DEFS = {
     },
     adsTime: 0.16,
     adsFov: 0.86,
+    moveScale: 1.1,
+    sprintScale: 1.07,
+    adsMoveScale: 0.72,
+    sprintToFire: 0.1,
     viewFov: 0.92,
     reloadTac: 1.6,
     reloadEmpty: 2.2,
@@ -271,6 +283,40 @@ export const WEAPON_DEFS = {
     magLen: 0.108,
   },
 };
+
+/** Damage after the weapon's full-damage range, linearly clamped at its floor. */
+export function weaponDamageAtRange(def, distance) {
+  const t = Math.min(
+    1,
+    Math.max(0, (distance - def.damageFalloffStart) / (def.damageFalloffEnd - def.damageFalloffStart))
+  );
+  return def.damage + (def.minDamage - def.damage) * t;
+}
+
+/** Fail during boot if a weapon cannot produce a coherent combat role. */
+export function validateWeaponDef(def) {
+  const positive = [
+    'rpm', 'magSize', 'muzzleVelocity', 'damage', 'minDamage',
+    'damageFalloffStart', 'damageFalloffEnd', 'maxRange',
+    'spreadHip', 'spreadAds', 'adsTime', 'adsFov',
+    'moveScale', 'sprintScale', 'adsMoveScale', 'sprintToFire',
+  ];
+  for (const key of positive) {
+    if (!Number.isFinite(def[key]) || def[key] <= 0) {
+      throw new Error(`Weapon ${def.id ?? '<unknown>'} has invalid ${key}: ${def[key]}`);
+    }
+  }
+  if (def.minDamage > def.damage) {
+    throw new Error(`Weapon ${def.id} minDamage cannot exceed damage`);
+  }
+  if (def.damageFalloffEnd <= def.damageFalloffStart || def.maxRange < def.damageFalloffEnd) {
+    throw new Error(`Weapon ${def.id} has an invalid damage range`);
+  }
+  if (def.spreadAds >= def.spreadHip) {
+    throw new Error(`Weapon ${def.id} ADS spread must be lower than hip spread`);
+  }
+  return def;
+}
 
 /**
  * Generate the deterministic recoil pattern for a weapon.

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { P } from './atlas.js';
 
 /**
  * GPU particle system.
@@ -9,10 +10,10 @@ import * as THREE from 'three';
  *     dv/dt = -k v + g          =>   v(t) = v0 e^-kt + g/k (1 - e^-kt)
  *                                    x(t) = x0 + (v0 - g/k)(1 - e^-kt)/k + g t / k
  *
- * plus a per-particle turbulence term, so the CPU never touches a particle
- * again after it is spawned: no per-frame simulation, no per-frame allocation,
- * no readback. Spawning writes 32 floats into a preallocated interleaved ring
- * buffer and uploads only the dirty span.
+ * plus a per-particle turbulence term. Rendering needs no CPU simulation or
+ * readback; AI visibility samples the same equations for live smoke only.
+ * Spawning writes 32 floats into a preallocated interleaved ring buffer and
+ * uploads only the dirty span.
  *
  * Two blend modes share the code:
  *   ADDITIVE  premultiplied ONE/ONE — sparks, muzzle flash, fire, tracers.
@@ -26,6 +27,8 @@ import * as THREE from 'three';
  */
 
 export const STRIDE = 32;
+export const PF_FLICKER = 1;
+export const PF_TRACER = 2;
 
 // interleaved slot offsets
 const O_PS = 0; // pos.xyz, size0
@@ -109,19 +112,33 @@ void main() {
 
   float k = max( aLife.z, 0.02 );
   float e = exp( -k * t );
-  vec3 gk = vec3( 0.0, aLife.w, 0.0 ) / k;
-  vec3 wpos = aPS.xyz + ( aVS.xyz - gk ) * ( ( 1.0 - e ) / k ) + gk * t;
-  vec3 wvel = aVS.xyz * e + gk * ( 1.0 - e );
-
-  // Turbulence: three decorrelated sines. Grows in so particles do not
-  // teleport on their first frame, and contributes to the velocity used for
-  // stretch orientation so drifting smoke leans the right way.
+  bool tracer = aExtra.w > 1.5;
+  vec3 wpos;
+  vec3 wvel;
   float ph = aExtra.z * 6.2831853;
-  float f = aExtra.y;
-  float grow = smoothstep( 0.0, 0.4, n );
-  float amp = aExtra.x * grow;
-  wpos += vec3( sin( t * f * 1.13 + ph ), sin( t * f * 0.79 + ph * 2.1 ), cos( t * f * 1.31 + ph * 1.7 ) ) * amp;
-  wvel += vec3( cos( t * f * 1.13 + ph ), cos( t * f * 0.79 + ph * 2.1 ), -sin( t * f * 1.31 + ph * 1.7 ) ) * ( amp * f );
+  if ( tracer ) {
+    // Tracers visualize an already-resolved physics segment. Advance the head
+    // linearly from the real muzzle and clamp it at the real endpoint stored in
+    // aExtra.x. Generic drag, gravity and turbulence would make the light lie.
+    float speed = length( aVS.xyz );
+    vec3 dir = speed > 1e-5 ? aVS.xyz / speed : vec3( 0.0, 0.0, -1.0 );
+    float travelled = min( max( aExtra.x, 0.0 ), speed * max( t, 0.0 ) );
+    wpos = aPS.xyz + dir * travelled;
+    wvel = dir * speed;
+  } else {
+    vec3 gk = vec3( 0.0, aLife.w, 0.0 ) / k;
+    wpos = aPS.xyz + ( aVS.xyz - gk ) * ( ( 1.0 - e ) / k ) + gk * t;
+    wvel = aVS.xyz * e + gk * ( 1.0 - e );
+
+    // Turbulence: three decorrelated sines. Grows in so particles do not
+    // teleport on their first frame, and contributes to the velocity used for
+    // stretch orientation so drifting smoke leans the right way.
+    float f = aExtra.y;
+    float grow = smoothstep( 0.0, 0.4, n );
+    float amp = aExtra.x * grow;
+    wpos += vec3( sin( t * f * 1.13 + ph ), sin( t * f * 0.79 + ph * 2.1 ), cos( t * f * 1.31 + ph * 1.7 ) ) * amp;
+    wvel += vec3( cos( t * f * 1.13 + ph ), cos( t * f * 0.79 + ph * 2.1 ), -sin( t * f * 1.31 + ph * 1.7 ) ) * ( amp * f );
+  }
 
   vec4 mv = viewMatrix * vec4( wpos, 1.0 );
   vec3 velView = ( viewMatrix * vec4( wvel, 0.0 ) ).xyz;
@@ -129,7 +146,30 @@ void main() {
   float size = mix( aPS.w, aVS.w, pow( n, max( aRot.w, 0.02 ) ) );
   vec2 c = position.xy;
   vec2 off;
-  if ( aRot.z > 0.001 ) {
+  bool ribbon = tracer && aRot.z > 0.001;
+  if ( ribbon ) {
+    // A finite ribbon follows the projectile head. Its tail cannot precede the
+    // muzzle because its length is clamped to distance actually travelled.
+    float travelled = length( wpos - aPS.xyz );
+    float len = min( aRot.z, travelled );
+    vec3 dir = length( wvel ) > 1e-5 ? normalize( wvel ) : vec3( 0.0, 0.0, -1.0 );
+    vec4 headMv = mv;
+    vec4 tailMv = viewMatrix * vec4( wpos - dir * len, 1.0 );
+    float alongU = c.y + 0.5;
+    mv = mix( tailMv, headMv, alongU );
+    vec4 headClip = projectionMatrix * headMv;
+    vec4 tailClip = projectionMatrix * tailMv;
+    vec2 screenDir = headClip.xy / max( headClip.w, 1e-5 ) - tailClip.xy / max( tailClip.w, 1e-5 );
+    float screenLen = length( screenDir );
+    vec2 along = screenLen > 1e-5 ? screenDir / screenLen : vec2( 0.0, 1.0 );
+    vec2 perpNdc = vec2( -along.y, along.x );
+    vec2 perpView = normalize( vec2(
+      perpNdc.x / projectionMatrix[0][0],
+      perpNdc.y / projectionMatrix[1][1]
+    ) );
+    mv.xy += perpView * ( c.x * size );
+    off = vec2( c.x * size, ( alongU - 0.5 ) * max( len, size ) );
+  } else if ( aRot.z > 0.001 ) {
     // velocity-aligned: +Y of the sprite runs along screen-space velocity
     vec2 d = velView.xy;
     float dl = length( d );
@@ -142,7 +182,11 @@ void main() {
     float s = sin( rot ), co = cos( rot );
     off = vec2( c.x * co - c.y * s, c.x * s + c.y * co ) * size;
   }
-  mv.xy += off;
+  // Ribbon vertices were positioned directly between their world-space tail
+  // and head above. Applying the offset again treated metres as another
+  // view-space displacement, producing the steep side/sky V that contradicted
+  // the shot.
+  if ( !ribbon ) mv.xy += off;
 
   vViewZ = -mv.z;
   vSoft = max( aMisc.y, 0.002 );
@@ -155,7 +199,7 @@ void main() {
 
   vec3 col = mix( aCol0.rgb, aCol1.rgb, n );
   float inten = mix( aCol0.w, aCol1.w, n * n );
-  if ( aExtra.w > 0.5 ) inten *= 0.72 + 0.28 * sin( t * 63.0 + ph * 9.0 );  // spark flicker
+  if ( aExtra.w > 0.5 && aExtra.w < 1.5 ) inten *= 0.72 + 0.28 * sin( t * 63.0 + ph * 9.0 );  // spark flicker
   float a = aMisc.z * pow( max( 1.0 - n, 0.0 ), max( aMisc.w, 0.02 ) ) * smoothstep( 0.0, 0.045, n );
   vCol = vec4( col * inten, a );
 }
@@ -245,7 +289,7 @@ function quadSource() {
 
 /**
  * A fixed-capacity ring of particles backed by one interleaved buffer.
- * Allocation happens exactly once, in the constructor.
+ * GPU storage is allocated at construction; the optional AI cache on first use.
  */
 export class ParticleLayer {
   /**
@@ -429,6 +473,83 @@ export class ParticleLayer {
     this.uniforms.uTime.value = now;
     this.geometry.instanceCount = this._wrapped ? this.capacity : this.highWater;
     this.mesh.visible = now < this.expireAt && this.geometry.instanceCount > 0;
+  }
+
+  /** Cache the shader's current smoke centers, squared radii and lifetime alpha. */
+  _cacheSmoke(now) {
+    if (this._smokeTime === now && this._smokeSpawned === this.spawned) return;
+    this._smokeTime = now;
+    this._smokeSpawned = this.spawned;
+    this._smoke ??= new Float32Array(this.capacity * 5);
+    this._smokeEnd = 0;
+    const a = this.array;
+    const smoke = this._smoke;
+    for (let b = 0; b < this.highWater * STRIDE; b += STRIDE) {
+      const tile = a[b + O_MS];
+      if ((tile !== P.SMOKE_A && tile !== P.SMOKE_B) || a[b + O_EX + 3] > 1.5) continue;
+      const t = now - a[b + O_LF];
+      const n = t * a[b + O_LF + 1];
+      if (t < 0 || n >= 1) continue;
+      const fadeIn = Math.min(1, n / 0.045);
+      const alpha = a[b + O_MS + 2] * Math.pow(1 - n, Math.max(a[b + O_MS + 3], 0.02))
+        * fadeIn * fadeIn * (3 - 2 * fadeIn);
+      if (alpha < 0.0035) continue;
+      const k = Math.max(a[b + O_LF + 2], 0.02);
+      const travel = (1 - Math.exp(-k * t)) / k;
+      const gravity = a[b + O_LF + 3] / k;
+      const grow = Math.min(1, n / 0.4);
+      const amp = a[b + O_EX] * grow * grow * (3 - 2 * grow);
+      const f = a[b + O_EX + 1];
+      const ph = a[b + O_EX + 2] * 6.2831853;
+      const size = a[b + O_PS + 3] + (a[b + O_VS + 3] - a[b + O_PS + 3])
+        * Math.pow(n, Math.max(a[b + O_RT + 3], 0.02));
+      if (size <= 0) continue;
+      const i = this._smokeEnd;
+      smoke[i] = a[b + O_PS] + a[b + O_VS] * travel + Math.sin(t * f * 1.13 + ph) * amp;
+      smoke[i + 1] = a[b + O_PS + 1] + (a[b + O_VS + 1] - gravity) * travel + gravity * t
+        + Math.sin(t * f * 0.79 + ph * 2.1) * amp;
+      smoke[i + 2] = a[b + O_PS + 2] + a[b + O_VS + 2] * travel + Math.cos(t * f * 1.31 + ph * 1.7) * amp;
+      smoke[i + 3] = size * size * 0.25;
+      smoke[i + 4] = Math.min(1, alpha);
+      this._smokeEnd += 5;
+    }
+  }
+
+  /** Optical transmission through actual live smoke, never through its emitter. */
+  visibilityBetween(from, to, now) {
+    if (this.mode !== 'lit' || this.highWater === 0 || now >= this.expireAt) return 1;
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-8) return 1;
+    this._cacheSmoke(now);
+    const ux = dx / length, uy = dy / length, uz = dz / length;
+    const smoke = this._smoke;
+    let visibility = 1;
+    for (let i = 0; i < this._smokeEnd; i += 5) {
+      const x = smoke[i] - from.x, y = smoke[i + 1] - from.y, z = smoke[i + 2] - from.z;
+      const along = x * ux + y * uy + z * uz;
+      const distanceSq = Math.max(0, x * x + y * y + z * z - along * along);
+      const radiusSq = smoke[i + 3];
+      if (distanceSq >= radiusSq) continue;
+      const halfChord = Math.sqrt(radiusSq - distanceSq);
+      const overlap = Math.min(length, along + halfChord) - Math.max(0, along - halfChord);
+      if (overlap <= 0) continue;
+      // Conservative soft atlas coverage, not an opaque sprite-sized sphere.
+      // Actual rim erosion and camera-dependent soft-depth fading vary by view;
+      // use a reduced core and radial falloff, also clipping at both endpoints.
+      const core = 1 - distanceSq / radiusSq;
+      visibility *= 1 - smoke[i + 4] * 0.75 * core * core * overlap / (2 * halfChord);
+    }
+    return visibility;
+  }
+
+  reset() {
+    this.cursor = this.highWater = this.spawned = 0;
+    this._smokeTime = NaN;
+    this._wrapped = false;
+    this.expireAt = -1;
+    this.geometry.instanceCount = 0;
+    this.mesh.visible = false;
   }
 
   dispose() {

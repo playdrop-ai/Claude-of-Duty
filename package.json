@@ -1,16 +1,36 @@
 {
   "name": "claude-of-duty",
   "version": "1.0.0",
+  "description": "Matt Shumer's Claude of Duty, the original Gauntlet Loop browser FPS, adapted for hosting on PlayDrop.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "validate": "npm run build",
     "preview": "vite preview --port 4173",
     "shot": "node tools/capture.mjs"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Matt Shumer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/playdrop-ai/Claude-of-Duty.git"
+  },
+  "homepage": "https://www.playdrop.ai/@mattshumer_/claude_of_duty",
+  "bugs": {
+    "url": "https://github.com/playdrop-ai/Claude-of-Duty/issues"
+  },
+  "keywords": [
+    "browser-game",
+    "first-person-shooter",
+    "wave-survival",
+    "procedural",
+    "three.js",
+    "webgl2",
+    "playdrop"
+  ],
   "type": "module",
   "dependencies": {
+    "nipplejs": "0.10.2",
     "three": "^0.180.0"
   },
   "devDependencies": {

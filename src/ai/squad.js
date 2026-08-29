@@ -20,12 +20,12 @@ export class Squad {
     this.peekTokens = 1;
     this.peekHolders = new Set();
     this.peekTimer = 0;
+    this.peekCursor = 0;
     this.grenadeCooldown = 6;
     this.flanker = null;
     this.contact = new THREE.Vector3();
     this.hasContact = false;
     this.contactAge = Infinity;
-    this._pending = [];
   }
 
   add(agent) {
@@ -61,9 +61,9 @@ export class Squad {
       for (const m of this.members) {
         if (!m.alive || m.hasTarget) continue;
         // a call-out only gives a direction to check, never a free kill
-        if (m.lastKnownAge > 1.5) {
-          m.lastKnown.copy(this.contact);
-          m.lastKnownAge = 0.9 + this.rng.float() * 0.8;
+        if (m.searchAge > 1.5) {
+          m.searchPoint.copy(this.contact);
+          m.searchAge = 0.9 + this.rng.float() * 0.8;
           m.alertness = 1;
           if (m.state === 'idle' || m.state === 'patrol') m._setState('alert');
         }
@@ -75,16 +75,16 @@ export class Squad {
     if (this.peekTimer <= 0) {
       this.peekTimer = 1.1 + this.rng.float() * 1.2;
       this.peekHolders.clear();
+      const ready = this.members.filter(m => m.alive && m.state === 'combat');
+      for (let i = 0; i < Math.min(this.peekTokens, ready.length); i++) {
+        this.peekHolders.add(ready[(this.peekCursor + i) % ready.length].id);
+      }
+      this.peekCursor++;
     }
   }
 
   /** Ask to lean out of cover. Only `peekTokens` members may at once. */
-  requestPeek(agent, dt) {
-    if (this.peekHolders.has(agent.id)) return true;
-    if (this.peekHolders.size >= this.peekTokens) return false;
-    this.peekHolders.add(agent.id);
-    return true;
-  }
+  requestPeek(agent) { return this.peekHolders.has(agent.id); }
 
   releasePeek(agent) {
     this.peekHolders.delete(agent.id);

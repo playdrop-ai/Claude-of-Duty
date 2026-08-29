@@ -33,7 +33,7 @@ import { NoiseBank, SPEED_OF_SOUND, clamp, gain as mkGain } from './dsp.js';
 import { Mixer } from './mixer.js';
 import { SpatialField } from './spatial.js';
 import { Ambience, ambientOneShot, ONE_SHOTS } from './ambience.js';
-import { WEAPON_PROFILES, resolveProfile, weaponShot, bulletWhizz, dryFire } from './weapons.js';
+import { WEAPON_PROFILES, resolveProfile, ShotBank, bulletWhizz, dryFire } from './weapons.js';
 import {
   surfaceImpact, footstep, shellCasing, reloadPhase, explosion, bodyFall, uiSound,
   heartbeat, cloth,
@@ -44,7 +44,7 @@ import { classifySpace } from './ir.js';
 const PROBE_RAYS = 9;
 const PROBE_DIST = 40;
 const DRY_SLOTS = 48;
-const GESTURES = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel'];
+const GESTURES = ['pointerdown', 'keydown', 'touchend'];
 
 /** Names other subsystems already use, mapped onto our voices. */
 const UI_ALIAS = {
@@ -106,8 +106,6 @@ export class AudioSystem {
     this._lastBarkTime = -99;
     this._lastEnemyFire = -99;
 
-    this._health = 100;
-    this._heartTimer = 0;
     this._stance = null;
     this._ads = false;
 
@@ -119,6 +117,12 @@ export class AudioSystem {
     this._offs = [];
     this._gestureHandler = null;
     this._ambienceApi = null;
+    this.enabled = true;
+    this._paused = false;
+    this._pageHidden = false;
+    this._stateChange = null;
+    this._disposed = false;
+    this.shots = new ShotBank();
   }
 
   /* ================================================================ */
@@ -128,20 +132,30 @@ export class AudioSystem {
   async init(ctx) {
     this.ctx = ctx;
     this.rng = ctx.rng.fork();
-    this._wireEvents(ctx);
-
-    // Web Audio needs a user gesture. Arm every plausible one; the first to
-    // land builds the graph. Capture mode never gestures, so shots render in
-    // silence and stay byte-identical.
-    const kick = () => {
-      this._disarmGesture();
-      this.start().catch(() => {});
-    };
-    this._gestureHandler = kick;
-    if (typeof addEventListener === 'function') {
-      for (const ev of GESTURES) addEventListener(ev, kick, { passive: true });
-    }
+    this.enabled = globalThis.__PLAYDROP_AUDIO_ENABLED__ ?? true;
+    // Fatal boot/GPU cleanup must be able to cancel offline preparation too.
     if (typeof window !== 'undefined') window.__AUDIO__ = this;
+    // Compile the expensive synthesis once during loading, not during combat.
+    // Offline rendering needs no gesture and never opens an audio device.
+    await this.shots.prepare(this.rng.fork());
+    if (this._disposed) return;
+    this._wireEvents(ctx);
+    const listen = (target, event, fn) => {
+      target.addEventListener(event, fn);
+      this._offs.push(() => target.removeEventListener(event, fn));
+    };
+    listen(document, 'visibilitychange', () => this.syncPlayback());
+    listen(window, 'pagehide', () => { this._pageHidden = true; this.syncPlayback(); });
+    listen(window, 'pageshow', () => { this._pageHidden = false; this.syncPlayback(); });
+    this._armGesture();
+  }
+
+  _armGesture() {
+    if (this._gestureHandler || typeof addEventListener !== 'function') return;
+    // start() calls resume synchronously, while Safari still has the gesture.
+    const kick = () => { if (this._wantsPlayback()) void this.start(); };
+    this._gestureHandler = kick;
+    for (const ev of GESTURES) addEventListener(ev, kick, { passive: true });
   }
 
   _disarmGesture() {
@@ -155,13 +169,21 @@ export class AudioSystem {
    * unavailable (no AudioContext, blocked autoplay, headless renderer, ...).
    */
   async start() {
-    if (this.running) return true;
-    if (this.failed) return false;
+    if (!this._wantsPlayback() || this.failed) return false;
     try {
+      if (this.actx) return this.syncPlayback(true);
       const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
       if (!AC) throw new Error('no AudioContext');
       const actx = new AC({ latencyHint: 'interactive' });
       this.actx = actx;
+      actx.onstatechange = () => {
+        this.stats.contextState = actx.state;
+        if (actx.state === 'running') {
+          this._disarmGesture();
+          if (!this._wantsPlayback()) void this.syncPlayback();
+        }
+        else if (this._wantsPlayback()) this._armGesture();
+      };
 
       this.bank = new NoiseBank(actx, this.rng.fork(), 2.4);
       this.mixer = new Mixer(actx, this.rng.fork(), {});
@@ -171,38 +193,114 @@ export class AudioSystem {
       this.ambience.start();
       this.mixer.setSpace(this._space, 0.001);
 
-      if (actx.state === 'suspended') await actx.resume();
       this.running = true;
       this.stats.started = true;
       this.stats.contextState = actx.state;
       console.info(`[audio] online @ ${actx.sampleRate} Hz`);
-      return true;
+      return this.syncPlayback(true);
     } catch (err) {
-      console.warn('[audio] disabled:', err?.message ?? err);
-      this.failed = true;
-      this._teardown();
+      this._error(err);
       return false;
     }
   }
 
+  _wantsPlayback() {
+    return this.enabled && !this.failed && !this._disposed && !this._paused && !this._pageHidden &&
+      !globalThis.document?.hidden && !this.ctx?.input?.hostPaused &&
+      !this.ctx?.input?.orientationPaused && this.ctx?.time?.scale !== 0;
+  }
+
+  get audible() { return this.running && this._wantsPlayback() && this.actx?.state === 'running'; }
+
+  setEnabled(enabled) {
+    this.enabled = Boolean(enabled);
+    return this.syncPlayback();
+  }
+
+  /** One live context. Muting, pausing and backgrounding stop its DSP as well. */
+  syncPlayback(fromGesture = false) {
+    const actx = this.actx;
+    if (!actx || actx.state === 'closed') return Promise.resolve(false);
+    const play = this._wantsPlayback();
+    const pending = this._stateChange;
+    if (pending?.play === play && !fromGesture) return pending.promise;
+    if (!pending && actx.state === (play ? 'running' : 'suspended')) return Promise.resolve(play);
+    // Chromium can leave a superseded native resume promise pending while the
+    // context is suspended. Complete our old request without waiting on it.
+    pending?.resolve(false);
+    const change = { play, promise: null, resolve: null };
+    change.promise = new Promise(resolve => { change.resolve = resolve; });
+    this._stateChange = change;
+    try {
+      // Do not defer resume behind another promise: iOS requires the gesture.
+      (play ? actx.resume() : actx.suspend()).then(() => {
+        if (this.actx !== actx || this._stateChange !== change) return;
+        this._stateChange = null;
+        this.stats.contextState = actx.state;
+        if (play !== this._wantsPlayback()) {
+          change.resolve(this.syncPlayback());
+          return;
+        }
+        if (play && actx.state !== 'running') this._armGesture();
+        change.resolve(this.audible);
+      }).catch(err => {
+        if (this.actx !== actx || this._stateChange !== change) return;
+        this._stateChange = null;
+        this._error(err);
+        change.resolve(false);
+      });
+      return change.promise;
+    } catch (err) {
+      this._stateChange = null;
+      this._error(err);
+      change.resolve(false);
+      return change.promise;
+    }
+  }
+
+  resetCombat() {
+    this._stance = null;
+    this._ads = false;
+    this.deafness = 0;
+    this._probeTimer = 0;
+    for (const d of this._dry) {
+      d.stop?.();
+      d.stop = null;
+      d.node?.disconnect();
+      d.send?.disconnect();
+      d.node = d.send = null;
+      d.end = 0;
+    }
+    if (this.field) for (const e of this.field.emitters) e.detach();
+    this.mixer?.resetCombat();
+  }
+
   _teardown() {
+    this.resetCombat();
     try {
       this.ambience?.dispose();
       this.field?.dispose();
       this.mixer?.dispose();
       this.bank?.dispose();
-      if (this.actx && this.actx.state !== 'closed') this.actx.close();
+      if (this.actx) {
+        this.actx.onstatechange = null;
+        if (this.actx.state !== 'closed') this.actx.close().catch(err => console.error('[audio] close failed', err));
+      }
     } catch { /* nothing useful to do */ }
     this.ambience = this.field = this.mixer = this.bank = null;
     this.actx = null;
     this.running = false;
+    this._stateChange?.resolve(false);
+    this._stateChange = null;
   }
 
   dispose() {
+    this._disposed = true;
     this._disarmGesture();
     for (const off of this._offs) off();
     this._offs.length = 0;
     this._teardown();
+    this.shots.dispose();
     if (typeof window !== 'undefined' && window.__AUDIO__ === this) delete window.__AUDIO__;
   }
 
@@ -212,9 +310,10 @@ export class AudioSystem {
 
   update(dt, ctx) {
     if (!this.running) return;
+    if (!this._wantsPlayback()) { void this.syncPlayback(); return; }
     try {
       const actx = this.actx;
-      if (actx.state === 'suspended') return; // tab hidden, or resume pending
+      if (actx.state !== 'running') return;
 
       /* ---- listener from the render camera ----------------------- */
       const cam = ctx.camera;
@@ -255,18 +354,10 @@ export class AudioSystem {
       for (let i = 0; i < this._dry.length; i++) {
         const d = this._dry[i];
         if (!d.node || now < d.end) continue;
+        d.stop?.(); d.stop = null;
         try { d.node.disconnect(); } catch { /* already gone */ }
         try { d.send?.disconnect(); } catch { /* already gone */ }
         d.node = null; d.send = null;
-      }
-
-      /* ---- low-health heartbeat ---------------------------------- */
-      if (this._health < 34) {
-        this._heartTimer -= dt;
-        if (this._heartTimer <= 0) {
-          this._heartTimer = 0.62 + (this._health / 34) * 0.45;
-          this._playDry('heartbeat', { level: clamp(1 - this._health / 34, 0.2, 1) }, 'foley', 0.1);
-        }
       }
 
       /* ---- reset per-frame budgets ------------------------------- */
@@ -286,13 +377,12 @@ export class AudioSystem {
   }
 
   _error(err) {
+    if (this.failed) return;
     this.stats.errors++;
-    if (this.stats.errors < 6) console.error('[audio]', err);
-    if (this.stats.errors === 40) {
-      console.error('[audio] too many errors — disabling audio');
-      this.failed = true;
-      this._teardown();
-    }
+    console.error('[audio] disabled after an audio processing error:', err);
+    this.failed = true;
+    this._disarmGesture();
+    this._teardown();
   }
 
   /* ================================================================ */
@@ -337,7 +427,7 @@ export class AudioSystem {
     const rng = this.rng;
     switch (kind) {
       case 'shot':
-        return weaponShot(actx, bank, rng, o.profile ?? WEAPON_PROFILES.rifle, {
+        return this.shots.play(actx, rng, o.profile ?? WEAPON_PROFILES.rifle, {
           when, distance: dist, firstPerson: o.firstPerson,
           echoBoost: 0.75 + this._space.street * 0.7 + this._space.tight * 0.35 +
             this._space.tunnel * 0.8 + this._space.open * 0.2,
@@ -363,8 +453,8 @@ export class AudioSystem {
    * reverb send. Returns false when the voice budget refused it.
    */
   _playAt(kind, x, y, z, o = {}, bus = 'foley', priority = 0.5) {
-    if (!this.running || this.actx.state === 'suspended') return false;
-    if (!Number.isFinite(x + y + z)) return this._playDry(kind, o, bus, o.send ?? 0.15);
+    if (!this.audible) return false;
+    if (!Number.isFinite(x + y + z)) return false;
     try {
       const field = this.field;
       const dist = field.distanceTo(x, y, z);
@@ -381,10 +471,11 @@ export class AudioSystem {
         tracked: o.tracked,
       });
       if (!em) {
+        voice.stop?.();
         try { voice.node.disconnect(); } catch { /* noop */ }
         return false;
       }
-      field.hold(em, voice.node, voice.end);
+      field.hold(em, voice.node, voice.end, voice.stop);
       this.stats.events++;
       return true;
     } catch (err) {
@@ -395,10 +486,12 @@ export class AudioSystem {
 
   /** Head-locked one-shot: own weapon, UI, player grunts, heartbeat. */
   _playDry(kind, o = {}, bus = 'foley', send = 0.15) {
-    if (!this.running || this.actx.state === 'suspended') return false;
+    if (!this.audible) return false;
     try {
-      const when = this.actx.currentTime + (o.extraDelay ?? 0);
-      const voice = this._build(kind, when, o.dist ?? 0, o);
+      const extraDelay = Number.isFinite(o.extraDelay) ? Math.max(0, o.extraDelay) : 0;
+      const distance = Number.isFinite(o.dist) ? Math.max(0, o.dist) : 0;
+      const when = this.actx.currentTime + extraDelay;
+      const voice = this._build(kind, when, distance, o);
       const g = mkGain(this.actx, o.gain ?? 1);
       voice.node.connect(g);
       g.connect(this.mixer.bus(bus));
@@ -421,12 +514,14 @@ export class AudioSystem {
       }
       if (!slot) {
         slot = this._dry[this._dryCursor];
+        slot.stop?.();
         try { slot.node.disconnect(); slot.send?.disconnect(); } catch { /* noop */ }
         this._dryCursor = (this._dryCursor + 1) % this._dry.length;
       }
       slot.node = g;
       slot.send = sendNode;
       slot.end = voice.end + 0.05;
+      slot.stop = voice.stop;
       this.stats.events++;
       return true;
     } catch (err) {
@@ -474,7 +569,7 @@ export class AudioSystem {
 
   /** Adapter the `fx` subsystem probes for: playShell(position, gain). */
   playShell(position, gain = 1) {
-    if (!isVec(position)) return false;
+    if (!this.audible || !isVec(position) || this._budget.shell++ >= 3) return false;
     return this._playAt('shell', position.x, position.y, position.z,
       { level: gain, surface: 'concrete', flight: 0.02 }, 'foley', 0.25);
   }
@@ -487,7 +582,7 @@ export class AudioSystem {
 
   /** Enemy vocalisation. `kind` is semantic — see barkFor() in vox.js. */
   bark(kind, position, opts = {}) {
-    if (!this.running) return false;
+    if (!this.audible) return false;
     const now = this.actx.currentTime;
     if (now - this._lastBarkTime < 0.42 && !opts.force) return false; // no mush
     this._lastBarkTime = now;
@@ -519,7 +614,8 @@ export class AudioSystem {
 
     on('weapon:fire', (p) => this._onFire(p));
     on('weapon:reload', (p) => this._onReload(p));
-    on('weapon:shell', (p) => this._onShell(p));
+    // ShellSystem calls playShell on real contact; do not also schedule a
+    // guessed second bounce sequence from the weapon's ejection event.
     on('bullet:impact', (p) => this._onImpact(p));
     on('bullet:tracer', (p) => this._onTracer(p));
     on('explosion', (p) => this._onExplosion(p));
@@ -529,12 +625,14 @@ export class AudioSystem {
     on('damage:dealt', (p) => this._onDamageDealt(p));
     on('damage:taken', (p) => this._onDamageTaken(p));
     on('actor:death', (p) => this._onDeath(p));
+    on('ui:pause', ({ paused }) => { this._paused = paused; void this.syncPlayback(); });
+    on('wave:started', () => { this._paused = false; void this.syncPlayback(); });
     // Optional: emitted by `ai` if it wants scripted chatter.
     on('ai:bark', (p) => this.bark(p?.kind ?? 'spot', p?.position, { voice: p?.voice ?? 0 }));
   }
 
   _onFire(p) {
-    if (!this.running || !p) return;
+    if (!this.audible || !p) return;
     const w = p.weapon;
     const name = typeof w === 'string' ? w : (w?.audio ?? w?.id ?? w?.name ?? w?.kind);
     let profile = resolveProfile(name);
@@ -545,7 +643,7 @@ export class AudioSystem {
       return;
     }
 
-    const o = p.origin;
+    const o = isVec(p.origin) ? p.origin : null;
     const lp = this.field.listenerPos;
     const x = o?.x ?? lp.x, y = o?.y ?? lp.y, z = o?.z ?? lp.z;
     const dist = this.field.distanceTo(x, y, z);
@@ -573,7 +671,7 @@ export class AudioSystem {
   }
 
   _onReload(p) {
-    if (!this.running) return;
+    if (!this.audible) return;
     const w = p?.weapon;
     const name = typeof w === 'string' ? w : (w?.audio ?? w?.id ?? w?.name);
     const heavy = /lmg|shot|snip|m249|pkm/i.test(String(name ?? '')) ? 1.35 : 1;
@@ -585,30 +683,8 @@ export class AudioSystem {
     }
   }
 
-  _onShell(p) {
-    if (!this.running || !p) return;
-    if (this._budget.shell++ > 2) return;
-    const pos = p.position;
-    const lp = this.field.listenerPos;
-    const x = pos?.x ?? lp.x, y = pos?.y ?? lp.y, z = pos?.z ?? lp.z;
-    const dist = this.field.distanceTo(x, y, z);
-    if (dist > 22) return;
-    // Find what it will land on, so brass on sand does not ring like concrete.
-    let surface = 'concrete';
-    const phys = this.ctx.peek('physics');
-    if (phys?.raycast) {
-      const h = phys.raycast(x, y + 0.2, z, 0, -1, 0, 6, phys.MASK?.WORLD);
-      if (h?.hit) surface = h.surface;
-    }
-    this._playAt('shell', x, y - 0.6, z, {
-      surface,
-      level: clamp(1 - dist * 0.02, 0.3, 1),
-      flight: 0.25 + this.rng.range(0, 0.3),
-    }, 'foley', 0.25);
-  }
-
   _onImpact(p) {
-    if (!this.running || !p) return;
+    if (!this.audible || !p) return;
     if (p.exit) return;                       // only the entry side gets a sound
     if (this._budget.impact++ > 4) return;
     const pt = p.point;
@@ -626,7 +702,7 @@ export class AudioSystem {
   }
 
   _onTracer(p) {
-    if (!this.running || !p?.from || !p?.to) return;
+    if (!this.audible || !isVec(p?.from) || !isVec(p?.to)) return;
     if (this._budget.whizz++ > 2) return;
     // Closest approach of the trajectory to the listener.
     const lp = this.field.listenerPos;
@@ -639,12 +715,13 @@ export class AudioSystem {
     const miss = Math.hypot(lp.x - cx, lp.y - cy, lp.z - cz);
     if (miss > 5) return;
     if (Math.hypot(lp.x - ax, lp.y - ay, lp.z - az) < 3) return; // our own muzzle
-    const flight = (Math.sqrt(len2) * t) / (p.speed ?? 850);
+    const speed = Number.isFinite(p.speed) && p.speed > 0 ? p.speed : 850;
+    const flight = (Math.sqrt(len2) * t) / speed;
     this._playAt('whizz', cx, cy, cz, { miss, noDelay: true, extraDelay: flight }, 'foley', 0.75);
   }
 
   _onExplosion(p) {
-    if (!this.running || !p?.position) return;
+    if (!this.audible || !p?.position) return;
     const pos = p.position;
     const dist = this.field.distanceTo(pos.x, pos.y, pos.z);
     this._playAt('explosion', pos.x, pos.y, pos.z, {
@@ -657,7 +734,7 @@ export class AudioSystem {
   }
 
   _onFootstep(p) {
-    if (!this.running) return;
+    if (!this.audible) return;
     if (this._budget.step++ > 3) return;
     const pos = p?.position;
     const lp = this.field.listenerPos;
@@ -672,7 +749,7 @@ export class AudioSystem {
   }
 
   _onLand(p) {
-    if (!this.running) return;
+    if (!this.audible) return;
     const lp = this.field.listenerPos;
     const v = Math.abs(typeof p?.velocity === 'number' ? p.velocity : (p?.velocity?.y ?? 4));
     this._playAt('step', lp.x, lp.y - 1.6, lp.z, {
@@ -683,7 +760,7 @@ export class AudioSystem {
   }
 
   _onPlayerState(p) {
-    if (!this.running || !p) return;
+    if (!this.audible || !p) return;
     if (p.stance !== undefined && p.stance !== this._stance) {
       this._stance = p.stance;
       this._playDry('cloth', { level: 0.9 }, 'foley', 0.12);
@@ -695,30 +772,27 @@ export class AudioSystem {
   }
 
   _onDamageDealt(p) {
-    if (!this.running || !p) return;
+    if (!this.audible || !p) return;
     // "Damage dealt TO p.target" — `ai` also uses this for rounds that hit the
     // player, and a hitmarker tick for being shot at is backwards. Incoming
     // damage is handled by _onDamageTaken.
     const t = p.target;
     if (t === 'player' || t?.isPlayer === true || t === this.ctx.peek('player')) return;
-    this.ui(p.headshot ? 'headshot' : 'hitmarker', 1);
-    if (p.killed) this.ui('kill', 1);
-    else if (p.point && p.target && this.rng.float() < 0.3) {
+    // The HUD owns hit/damage cues and heartbeat timing from live health.
+    if (!p.killed && p.point && p.target && this.rng.float() < 0.3) {
       this.bark('hurt', p.point, { level: 0.85 });
     }
   }
 
   _onDamageTaken(p) {
-    if (!this.running || !p) return;
-    if (typeof p.health === 'number') this._health = p.health;
-    this.ui('damage', clamp((p.amount ?? 20) / 25, 0.4, 1.4));
+    if (!this.audible || !p) return;
     if ((p.amount ?? 0) > 12 && this.rng.float() < 0.5) {
       this._playDry('bark', { bark: 'hit', level: 0.5, f0: 108 }, 'voice', 0.1);
     }
   }
 
   _onDeath(p) {
-    if (!this.running) return;
+    if (!this.audible) return;
     const pt = p?.point;
     if (!pt) return;
     this.bark('death', pt, { level: 1, force: true, voice: (p?.actor?.id ?? 0) | 0 });
@@ -733,7 +807,7 @@ export class AudioSystem {
 
   /** A burst of gunfire a long way off, with correct propagation delay. */
   _distantVolley() {
-    if (!this.running) return;
+    if (!this.audible) return;
     const rng = this.rng;
     const lp = this.field.listenerPos;
     const a = rng.range(0, Math.PI * 2);
@@ -754,7 +828,7 @@ export class AudioSystem {
   }
 
   _distantBoom() {
-    if (!this.running) return;
+    if (!this.audible) return;
     const rng = this.rng;
     const lp = this.field.listenerPos;
     const a = rng.range(0, Math.PI * 2);
@@ -765,7 +839,7 @@ export class AudioSystem {
   }
 
   _ambientOneShot() {
-    if (!this.running) return;
+    if (!this.audible) return;
     const rng = this.rng;
     const lp = this.field.listenerPos;
     const which = rng.pick(ONE_SHOTS);
@@ -784,7 +858,7 @@ export class AudioSystem {
   }
 
   _distantChatter() {
-    if (!this.running) return;
+    if (!this.audible) return;
     const rng = this.rng;
     const lp = this.field.listenerPos;
     const a = rng.range(0, Math.PI * 2);
@@ -851,6 +925,9 @@ export class AudioSystem {
       failed: this.failed,
       state: this.actx?.state ?? 'none',
       sampleRate: this.actx?.sampleRate ?? 0,
+      audible: this.audible,
+      shotBuffers: this.shots.buffers.size * 8,
+      shotBufferBytes: this.shots.bytes,
       voices: this.field?.stats.active ?? 0,
       dropped: this.field?.stats.dropped ?? 0,
       stolen: this.field?.stats.stolen ?? 0,

@@ -3,18 +3,196 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <title>OVERWATCH — Tactical Shooter</title>
+    <title>Claude of Duty</title>
+    <link rel="icon" href="data:," />
     <style>
       :root { color-scheme: dark; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
       body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
-      #game { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
+      #game { display: block; width: 100vw; height: 100dvh; touch-action: none; cursor: none; outline: none; }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: #f4eee3;
+        background:
+          radial-gradient(circle at 50% 38%, rgba(173, 126, 74, .16), transparent 32%),
+          linear-gradient(135deg, #080807 0%, #11100d 50%, #070706 100%);
+        cursor: default;
+        transition: opacity 320ms ease;
+      }
+      #boot::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .18;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px);
+        background-size: 34px 34px;
+        transform: perspective(520px) rotateX(56deg) scale(1.8) translateY(16%);
+        transform-origin: center bottom;
+      }
+      #boot[hidden] { display: none; }
+      .boot-panel {
+        position: relative;
+        width: min(620px, calc(100vw - 48px));
+        padding: 44px 48px 40px;
+        border: 1px solid rgba(228, 196, 151, .24);
+        background: rgba(9, 9, 8, .74);
+        box-shadow: 0 28px 100px rgba(0, 0, 0, .65), inset 0 0 60px rgba(255, 255, 255, .025);
+        text-align: center;
+      }
+      .boot-eyebrow {
+        color: #cda873;
+        font: 600 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: .34em;
+      }
+      .boot-title {
+        margin-top: 13px;
+        font-size: clamp(36px, 7vw, 72px);
+        font-weight: 900;
+        line-height: .92;
+        letter-spacing: -.055em;
+        text-transform: uppercase;
+      }
+      .boot-rule {
+        width: 100%;
+        height: 2px;
+        margin: 27px 0 22px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, .08);
+      }
+      .boot-progress {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      .boot-progress-bar {
+        width: 3%;
+        height: 100%;
+        background: linear-gradient(90deg, #8c6336, #e2bb7f);
+        box-shadow: 0 0 18px rgba(214, 167, 97, .45);
+        transition: width 220ms ease-out;
+      }
+      .boot-status {
+        min-height: 17px;
+        color: rgba(244, 238, 227, .8);
+        font: 500 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+      }
+      .boot-note {
+        margin-top: 10px;
+        min-height: 18px;
+        color: rgba(244, 238, 227, .4);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      @keyframes boot-start-blink {
+        0%, 100% { opacity: .36; }
+        50% { opacity: 1; }
+      }
+      #boot[data-state="ready"], #boot[data-state="error"] { cursor: pointer; }
+      #boot[data-state="ready"] {
+        background: rgba(5, 5, 4, .38);
+        -webkit-backdrop-filter: blur(7px) saturate(.72) brightness(.78);
+        backdrop-filter: blur(7px) saturate(.72) brightness(.78);
+      }
+      #boot[data-state="ready"]::before { opacity: .07; }
+      #boot[data-state="ready"] .boot-panel {
+        border-color: rgba(228, 196, 151, .38);
+        box-shadow: 0 28px 100px rgba(0, 0, 0, .65), inset 0 0 60px rgba(255, 255, 255, .035);
+      }
+      #boot[data-state="ready"] .boot-note {
+        color: rgba(244, 238, 227, .9);
+        animation: boot-start-blink 1.35s ease-in-out infinite;
+      }
+      #boot[data-state="ready"]:focus-visible .boot-panel {
+        outline: 2px solid #fff3d8;
+        outline-offset: 5px;
+      }
+      #boot[data-state="ready"] .boot-progress-bar { box-shadow: 0 0 24px rgba(214, 167, 97, .62); }
+      #boot[data-state="error"] .boot-progress-bar { background: #ef655f; box-shadow: none; }
+      #boot[data-state="error"] .boot-status { color: #ffaaa5; }
+      #boot[data-state="error"] { transition: none; }
+      #rotate-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10001;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: #f4eee3;
+        background: #0d0e0e;
+        text-align: center;
+        touch-action: none;
+      }
+      #rotate-overlay[hidden] { display: none; }
+      .rotate-icon {
+        width: 74px;
+        height: 42px;
+        margin: 0 auto 25px;
+        border: 2px solid #f4eee3;
+        border-radius: 7px;
+      }
+      #rotate-overlay h2 { font-size: 19px; letter-spacing: .14em; }
+      #rotate-overlay p { margin-top: 12px; color: #9b9f9e; font-size: 13px; }
+      .touch-device { overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+      .touch-device #boot {
+        touch-action: manipulation;
+        padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      }
+      @media (max-height: 500px) {
+        .touch-device .boot-panel { width: min(460px, 100%); padding: 23px 30px; }
+        .touch-device .boot-title { font-size: clamp(36px, 8vw, 54px); }
+        .touch-device .boot-eyebrow { font-size: 9px; letter-spacing: .25em; }
+        .touch-device .boot-rule { margin: 20px 0 16px; }
+        .touch-device .boot-status { font-size: 10px; }
+        .touch-device .boot-note { font-size: 11px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-progress-bar { transition: none; }
+        #boot[data-state="ready"] .boot-note { animation: none; opacity: 1; }
+      }
     </style>
   </head>
   <body>
-    <canvas id="game"></canvas>
+    <canvas id="game" tabindex="-1"></canvas>
     <div id="ui"></div>
-    <script type="module" src="/src/main.js"></script>
+    <div id="rotate-overlay" role="status" aria-live="polite" hidden>
+      <div>
+        <div class="rotate-icon" aria-hidden="true"></div>
+        <h2>ROTATE TO PLAY</h2>
+        <p>Claude of Duty plays in landscape.</p>
+      </div>
+    </div>
+    <div id="boot" role="dialog" aria-labelledby="boot-title" aria-busy="true" tabindex="-1">
+      <div class="boot-panel">
+        <div class="boot-eyebrow">PROCEDURAL TACTICAL SYSTEM</div>
+        <div id="boot-title" class="boot-title">Claude of Duty</div>
+        <div class="boot-rule">
+          <div
+            id="boot-progress"
+            class="boot-progress"
+            role="progressbar"
+            aria-label="Deployment progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="3"
+          >
+            <div id="boot-progress-bar" class="boot-progress-bar"></div>
+          </div>
+        </div>
+        <div id="boot-status" class="boot-status" aria-live="polite">Establishing deployment link</div>
+        <div id="boot-note" class="boot-note">Generating every mesh, material, effect, and sound in code</div>
+      </div>
+    </div>
+    <script type="module" src="/src/playdrop-entry.js"></script>
   </body>
 </html>

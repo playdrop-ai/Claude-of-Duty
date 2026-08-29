@@ -79,6 +79,13 @@ export class HealthFx {
     this.regenT = 0;
   }
 
+  reset() {
+    this.hpShown = 1;
+    this.hurt = this.beatPhase = this.beatEnergy = this._lastBeat = 0;
+    this.flashT = this.regenT = 1;
+    this.update(0, { health: 100, maxHealth: 100 });
+  }
+
   /** @param {object} s { health, maxHealth, armour, maxArmour, regen:bool } */
   update(dt, s) {
     const h = clamp01((s.health ?? 100) / (s.maxHealth || 100));

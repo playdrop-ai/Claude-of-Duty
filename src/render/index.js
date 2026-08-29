@@ -17,7 +17,7 @@ import { createComposite, createFxaa, createDebug, createViewComposite } from '.
 import { buildFallbackEnvironment } from './env.js';
 import { RenderProbeScene } from './probe.js';
 
-const QUALITY_LEVEL = { low: 0, medium: 1, high: 2, ultra: 3 };
+const QUALITY_LEVEL = { low: 0, mobile: 1, medium: 1, high: 2, ultra: 3 };
 
 /**
  * Registration range at or below which a punctual light counts as a room/street
@@ -195,14 +195,18 @@ export class RenderSystem {
     });
 
     this.gbuffer = new GBuffer();
-    this.gtao = q.gtao ? new Gtao() : null;
-    this.contact = this.qLevel >= 1 ? new ContactShadows() : null;
-    this.ssr = q.ssr ? new Ssr() : null;
+    const fullResolutionScreenSpace = new URLSearchParams(location.search)
+      .get('profileFullScreenSpace') === '1';
+    this.gtao = q.gtao ? new Gtao(fullResolutionScreenSpace ? 1 : 0.25) : null;
+    this.contact = this.qLevel >= 1 && q.contactShadows !== false
+      ? new ContactShadows(fullResolutionScreenSpace ? 1 : 0.5)
+      : null;
+    this.ssr = q.ssr ? new Ssr(fullResolutionScreenSpace ? 0.5 : 0.25) : null;
     this.taa = q.taa ? new Taa() : null;
     this.motionBlur = q.motionBlur ? new MotionBlur() : null;
     // ADS depth of field. Cheap (half-res gather, 32 taps) and only ever runs
     // while the sights are actually up, so it costs nothing in hipfire.
-    this.dof = this.qLevel >= 1 ? new DepthOfField() : null;
+    this.dof = this.qLevel >= 1 && q.dof !== false ? new DepthOfField() : null;
     this.bloom = q.bloom ? new Bloom(this.qLevel >= 2 ? 6 : 5) : null;
     this.exposure = new AutoExposure();
     // Headroom for a physically-scaled sky (sunlit scenes reach ~5000 cd/m2).
@@ -216,9 +220,9 @@ export class RenderSystem {
     this.viewComposite = createViewComposite();
     this.fxaa = q.taa ? null : createFxaa();
     // MSAA on the viewmodel target only. It is the one buffer whose geometric
-    // edges no longer get a temporal filter, and 4x on a single small pass is
+    // edges no longer get a temporal filter, and 2x on a single small pass is
     // far cheaper than any spatial substitute at the same quality.
-    this._viewSamples = this.qLevel >= 2 ? 4 : this.qLevel >= 1 ? 2 : 0;
+    this._viewSamples = this.qLevel >= 1 ? 2 : 0;
 
     // Always on: depthTexture/velocityTexture are part of the public contract
     // (soft particles, SSR, motion blur) even when our own effects are off.
@@ -462,7 +466,8 @@ export class RenderSystem {
     this.probeActive = false;
     // In capture mode print the metering chain so a bad exposure is obvious
     // in the harness log rather than something to guess at from the PNG.
-    this._probeExposure = ctx.config.deterministic === true;
+    this._probeExposure = ctx.config.deterministic === true &&
+      new URLSearchParams(location.search).get('profile') !== '1';
     this.debugView = new URLSearchParams(location.search).get('rview') || null;
     this._debugPass = null;
 
@@ -866,12 +871,22 @@ export class RenderSystem {
   // ==========================================================================
 
   resize(w, h, ctx) {
-    const pr = Math.min(globalThis.devicePixelRatio || 1, 1.5);
-    this.renderer.setPixelRatio(pr);
+    const nativePr = Math.min(globalThis.devicePixelRatio || 1, 1.5);
+    const nativeWidth = Math.max(1, w * nativePr);
+    const nativeHeight = Math.max(1, h * nativePr);
+    const outputScale = Math.min(
+      1,
+      ctx.config.maxRenderWidth / nativeWidth,
+      ctx.config.maxRenderHeight / nativeHeight
+    );
+    const outputPr = nativePr * outputScale;
+    this.renderer.setPixelRatio(outputPr);
     this.renderer.setSize(w, h, false);
 
-    const dw = Math.max(1, Math.floor(w * pr));
-    const dh = Math.max(1, Math.floor(h * pr));
+    // The framebuffer fits inside the device envelope while retaining the
+    // viewport aspect ratio. CSS still stretches the canvas to fill its box.
+    const dw = Math.max(1, Math.floor(w * outputPr));
+    const dh = Math.max(1, Math.floor(h * outputPr));
     const rw = Math.max(1, Math.floor(dw * this.q.renderScale));
     const rh = Math.max(1, Math.floor(dh * this.q.renderScale));
 
@@ -883,7 +898,7 @@ export class RenderSystem {
 
     this.hdrRt?.dispose();
     this.hdrRt = hdrTarget(rw, rh, { depthBuffer: true, name: 'hdr' });
-    // The viewmodel gets its own colour+depth buffer with 4x MSAA, cleared to
+    // The viewmodel gets its own colour+depth buffer with 2x MSAA, cleared to
     // TRANSPARENT black so the composite has real coverage to work with.
     this.viewRt?.dispose();
     this.viewRt = hdrTarget(rw, rh, {
@@ -910,6 +925,7 @@ export class RenderSystem {
     });
 
     this.gbuffer.setSize(rw, rh);
+    if (this.needsPrepass) this.hdrRt.depthTexture = this.gbuffer.rt.depthTexture;
     this.gtao?.setSize(rw, rh);
     this.contact?.setSize(rw, rh);
     this.ssr?.setSize(rw, rh);
@@ -937,6 +953,11 @@ export class RenderSystem {
   //  scene walk
   // ==========================================================================
 
+  resetHistory() {
+    this._firstFrame = true;
+    this.taa?.reset();
+  }
+
   _visit(o) {
     if (o.isMesh === true || o.isPoints === true || o.isSprite === true || o.isLine === true) {
       const mat = o.material;
@@ -959,7 +980,7 @@ export class RenderSystem {
         this._hide[this._nHide++] = o;
       } else {
         this._draw[this._nDraw++] = o;
-        if (ud.owNoShadow === true) this._noShadow[this._nNoShadow++] = o;
+        if (o.castShadow === false || ud.owNoShadow === true) this._noShadow[this._nNoShadow++] = o;
       }
     } else if (o.isDirectionalLight === true) {
       this._dirLights[this._nDirLights++] = o;
@@ -1372,7 +1393,10 @@ export class RenderSystem {
     // ---- 8. forward world pass -------------------------------------------
     this.csm.uniforms.owSunDirView.value.copy(this.sunDirView);
     renderer.setRenderTarget(this.hdrRt);
-    renderer.clear(true, true, false);
+    // The prepass already found the frontmost opaque surface with the exact
+    // same jittered camera. Reuse its depth to reject hidden fragments before
+    // running the expensive material/lighting shader; preserve all colour work.
+    renderer.clear(true, !this.needsPrepass, false);
     renderer.render(scene, camera);
 
     // ---- 9. viewmodel into its OWN colour+depth target --------------------
@@ -1523,7 +1547,15 @@ export class RenderSystem {
     cu.tBloom.value = bloomTex ?? color;
     cu.tExposure.value = exposureTex;
     cu.uGrade.value.x = bloomTex ? s.bloomStrength : 0;
-    cu.uGrade.value.z = this.taa ? s.sharpen : 0;
+    const internalScale = Math.min(
+      1,
+      this.screenSize.width / this.displaySize.width,
+      this.screenSize.height / this.displaySize.height
+    );
+    cu.uGrade.value.z = this.taa
+      ? s.sharpen + (1 - internalScale) * 0.55
+      : 0;
+    cu.uUpscale.value = 1 - internalScale;
     // Vignette closes in with the sight picture.
     cu.uLens.value.y = s.vignette + (s.adsVignette - s.vignette) * this._adsT;
     cu.uLens.value.w = ctx.time.elapsed;

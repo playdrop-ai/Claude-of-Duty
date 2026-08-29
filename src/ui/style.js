@@ -248,21 +248,14 @@ const CSS = `
   text-align:right; line-height:1;
 }
 .ow-ammo-head {
-  display:grid; grid-auto-flow:column; grid-auto-columns:max-content;
-  justify-content:end; align-items:center;
-  column-gap: var(--gut); margin-bottom:calc(var(--u) * 1.1);
+  display:flex; width:100%; justify-content:flex-end; align-items:center;
+  column-gap:calc(4px * var(--k)); margin-top:calc(var(--u) * 1.4);
 }
 .ow-ammo-name {
   font-size: calc(12.5px * var(--k)); letter-spacing:.22em;
   color: var(--ink); text-shadow: var(--sh-o1);
   white-space:nowrap; overflow:hidden; text-overflow:clip;
-  max-width: calc(var(--ammo-w) - 52px * var(--k));
-}
-.ow-ammo-mode {
-  font-size: calc(9.5px * var(--k)); letter-spacing:.2em; color: var(--ink-2);
-  border:1px solid var(--hair); padding: calc(1.5px * var(--k)) calc(4px * var(--k));
-  background: rgba(6,10,13,.34);
-  text-shadow: var(--sh-hard); white-space:nowrap;
+  max-width:calc(var(--ammo-w) - 52px * var(--k)); text-align:right;
 }
 .ow-ammo-row {
   display:grid; grid-auto-flow:column; grid-auto-columns:max-content;
@@ -281,6 +274,23 @@ const CSS = `
   text-shadow: var(--sh-o1); }
 .ow-ammo-low .ow-ammo-cur { color: var(--amber); }
 .ow-ammo-empty .ow-ammo-cur { color: var(--red); }
+
+.ow-weapon-keys {
+  display:flex; justify-content:flex-end; align-items:center;
+  justify-self:end;
+  gap: calc(4px * var(--k));
+  color: var(--ink-3); text-shadow: var(--sh-hard);
+}
+.ow-keycap {
+  display:inline-grid; place-items:center;
+  min-width: calc(15px * var(--k)); height: calc(15px * var(--k));
+  padding: 0 calc(3px * var(--k)); border:1px solid var(--hair);
+  color: var(--ink-3); background:rgba(5,9,12,.48);
+  font: 600 calc(8.5px * var(--k))/1 var(--fm); letter-spacing:0;
+  box-shadow: 0 1px 2px rgba(0,0,0,.5);
+}
+.ow-keycap.active { color:#0b0d0f; border-color:var(--ink); background:var(--ink); }
+.ow-keycap.unavailable { display:none; }
 
 .ow-mag {
   display:flex; justify-content:flex-end; gap: calc(1.6px * var(--k));
@@ -307,20 +317,30 @@ const CSS = `
 }
 .ow-reload-bar i { display:block; height:100%; width:0; background: var(--amber); transform-origin:left; }
 
-/* equipment: its own row, in flow, above the weapon name */
+/* equipment: a dedicated top row, separate from ammunition and weapon choice */
 .ow-equip {
   display:grid; grid-auto-flow:column; grid-auto-columns:max-content;
   justify-content:end; align-items:center;
-  column-gap: calc(var(--gut) * 2); margin-bottom: calc(var(--u) * 1.4);
+  column-gap: calc(var(--gut) * 2); margin-bottom: calc(var(--u) * 1.2);
 }
 .ow-slot {
   display:grid; grid-auto-flow:column; grid-auto-columns:max-content;
-  align-items:center; column-gap: var(--gut); opacity:.9;
+  align-items:center; column-gap: calc(var(--gut) * .75); opacity:.9;
 }
-.ow-slot svg { width: calc(13px * var(--k)); height: calc(16.5px * var(--k)); display:block;
-  filter: drop-shadow(0 0 calc(2px * var(--k)) rgba(0,0,0,.95)); }
-.ow-slot span { font-size: calc(11px * var(--k)); color: var(--ink-2); text-shadow: var(--sh-o1);
-  min-width: calc(7px * var(--k)); text-align:left; }
+.ow-slot svg {
+  width: calc(20.8px * var(--k)); height: calc(26.4px * var(--k)); display:block;
+  filter: drop-shadow(0 0 calc(2px * var(--k)) rgba(0,0,0,.95));
+}
+.ow-slot-meta {
+  display:grid; grid-auto-flow:row; grid-auto-rows:max-content;
+  justify-items:center; align-items:center; row-gap:calc(2px * var(--k));
+}
+.ow-slot-meta .ow-keycap { color:var(--ink-2); transform:translateY(-20%); }
+.ow-slot-count {
+  font-family: var(--fd); font-size: calc(17.6px * var(--k)); font-weight:700;
+  letter-spacing:.02em; color: var(--ink); text-shadow: var(--o2), 0 0 calc(8px * var(--k)) rgba(0,0,0,.55);
+  min-width: calc(15px * var(--k)); line-height:1; text-align:center;
+}
 .ow-slot.empty { opacity:.34; }
 
 /* ============================================================== killfeed */
@@ -439,9 +459,7 @@ const CSS = `
 }
 .ow-match b { font-family: var(--fd); font-size: calc(19px * var(--k)); font-weight:700;
   letter-spacing:.04em; }
-.ow-match .us { color: var(--friend); }
 .ow-match .them { color: var(--enemy); }
-.ow-match .clock { color: var(--ink); font-variant-numeric: tabular-nums; }
 .ow-match .sep { width:1px; height: calc(11px * var(--k)); background: var(--hair); }
 
 /* =============================================================== minimap */
@@ -597,71 +615,69 @@ const CSS = `
   background: linear-gradient(to right, transparent, rgba(255,255,255,.5), transparent);
 }
 
+/* ========================================================== death state */
+.ow-death {
+  position:absolute; inset:0; z-index:30;
+  display:flex; align-items:center; justify-content:center;
+  pointer-events:auto; cursor:default;
+  background:
+    radial-gradient(ellipse 70% 64% at 50% 45%, rgba(89,8,5,.18), rgba(3,4,5,.78) 72%),
+    rgba(3,4,5,.38);
+  backdrop-filter: saturate(.25) brightness(.48);
+}
+.ow-death-inner { text-align:center; }
+.ow-death-kicker {
+  color:var(--red); font-size:calc(10px * var(--k)); font-weight:800;
+  letter-spacing:.38em; text-shadow:var(--sh-o1);
+}
+.ow-death-title {
+  margin-top:calc(var(--u) * 2.2); color:var(--ink); font-family:var(--fd);
+  font-size:calc(42px * var(--k)); font-weight:700; letter-spacing:.2em;
+  text-shadow:var(--sh-o2);
+}
+.ow-death-rule {
+  width:calc(180px * var(--k)); height:1px; margin:calc(var(--u) * 4) auto;
+  background:linear-gradient(to right, transparent, rgba(255,63,49,.82), transparent);
+}
+.ow-death-button {
+  appearance:none; min-width:calc(220px * var(--k));
+  border:1px solid rgba(255,255,255,.34); background:rgba(7,9,11,.66);
+  color:var(--ink); font-family:var(--ff); font-size:calc(11px * var(--k));
+  font-weight:800; letter-spacing:.22em; padding:calc(var(--u) * 3) calc(var(--u) * 6);
+  cursor:pointer; text-transform:uppercase;
+}
+.ow-death-button:hover, .ow-death-button:focus-visible {
+  border-color:var(--red); background:rgba(105,14,9,.52); outline:none;
+}
+.ow-result-detail { color:var(--ink-2); font-size:clamp(11px, 1.3vw, 14px); line-height:1.6; margin:0 12px 22px; }
+.ow-death-button:disabled { cursor:default; opacity:.45; }
+.ow-death.won { background:rgba(3,4,5,.7); backdrop-filter:saturate(.65) brightness(.65); }
+.ow-death.won .ow-death-kicker { color:var(--ink); }
+.ow-death.won .ow-death-rule { background:linear-gradient(to right, transparent, rgba(255,255,255,.65), transparent); }
+.ow-death.won .ow-death-button:hover, .ow-death.won .ow-death-button:focus-visible { border-color:var(--ink); background:rgba(255,255,255,.12); }
+
 /* ================================================================== menu */
 .ow-menu {
   position:absolute; inset:0; pointer-events:auto;
-  background: linear-gradient(105deg, rgba(4,6,8,.90) 0%, rgba(4,6,8,.72) 46%, rgba(4,6,8,.42) 100%);
+  display:grid; place-items:center;
+  background: rgba(4,6,8,.72);
   backdrop-filter: blur(calc(9px * var(--k))) saturate(.7) brightness(.8);
   opacity:0; will-change: opacity;
 }
 .ow-menu-inner {
-  position:absolute; left: calc(var(--u) * 22); top:50%;
-  transform: translateY(-50%);
-  width: calc(430px * var(--k));
-  padding-left: calc(var(--u) * 4.5);
-  border-left: calc(2px * var(--k)) solid var(--amber);
+  width: min(calc(320px * var(--k)), calc(100% - var(--pad) * 2));
+  padding: calc(var(--u) * 7) calc(var(--u) * 6);
+  border-top: calc(2px * var(--k)) solid var(--amber);
+  background: rgba(5,8,10,.78);
+  box-shadow: 0 calc(18px * var(--k)) calc(60px * var(--k)) rgba(0,0,0,.42);
+  text-align:center;
 }
 .ow-menu h1 {
   font-family: var(--fd);
-  font-size: calc(46px * var(--k)); font-weight:700; letter-spacing:.3em;
+  font-size: calc(38px * var(--k)); font-weight:700; letter-spacing:.26em;
   text-shadow: 0 2px 6px rgba(0,0,0,.8);
 }
-.ow-menu .sub {
-  margin-top: calc(var(--u) * 1.2); font-size: calc(10px * var(--k));
-  letter-spacing:.28em; color: var(--ink-3);
-}
-.ow-menu .rule {
-  margin: calc(var(--u) * 5) 0 calc(var(--u) * 2); height:1px;
-  background: linear-gradient(to right, rgba(255,255,255,.28), rgba(255,255,255,0));
-}
-.ow-row {
-  display:flex; align-items:center; justify-content:space-between;
-  gap: calc(var(--u) * 4); padding: calc(var(--u) * 3.2) 0;
-  border-bottom: 1px solid var(--hair-2);
-}
-.ow-row > .name { font-size: calc(11.5px * var(--k)); letter-spacing:.2em; color: var(--ink); }
-.ow-row > .val { font-family: var(--fm); font-size: calc(11px * var(--k)); color: var(--amber);
-  letter-spacing:.04em; min-width: calc(46px * var(--k)); text-align:right; }
-.ow-seg { display:flex; gap:0; }
-.ow-seg button {
-  appearance:none; border:1px solid var(--hair); border-right:0; background:rgba(255,255,255,.03);
-  color: var(--ink-2); font-family:var(--ff); font-weight:600; text-transform:uppercase;
-  font-size: calc(10px * var(--k)); letter-spacing:.16em;
-  padding: calc(var(--u) * 1.3) calc(var(--u) * 2.2);
-  cursor:pointer; position:relative; transition: color .12s, background .12s;
-}
-.ow-seg button:last-child { border-right:1px solid var(--hair); }
-.ow-seg button:hover { color: var(--ink); background: rgba(255,255,255,.07); }
-.ow-seg button.on { color:#0b0d0f; background: var(--ink); }
-.ow-slider { position:relative; width: calc(190px * var(--k)); height: calc(18px * var(--k)); }
-.ow-slider .track {
-  position:absolute; left:0; right:0; top:50%; height: calc(2px * var(--k));
-  transform: translateY(-50%); background: rgba(255,255,255,.16);
-}
-.ow-slider .fill {
-  position:absolute; left:0; top:50%; height: calc(2px * var(--k));
-  transform: translateY(-50%); background: var(--amber);
-}
-.ow-slider .knob {
-  position:absolute; top:50%; width: calc(9px * var(--k)); height: calc(9px * var(--k));
-  background: var(--amber); transform: translate(-50%,-50%) rotate(45deg);
-  box-shadow: 0 0 calc(6px * var(--k)) rgba(255,176,42,.5);
-}
-.ow-slider input {
-  position:absolute; inset:0; width:100%; height:100%; margin:0;
-  appearance:none; background:transparent; cursor:pointer; opacity:0;
-}
-.ow-btns { margin-top: calc(var(--u) * 5); display:flex; gap: calc(var(--u) * 2.5); }
+.ow-btns { margin-top: calc(var(--u) * 5); display:flex; justify-content:center; }
 .ow-btn {
   appearance:none; border:1px solid var(--hair); background: rgba(255,255,255,.04);
   color: var(--ink); font-family: var(--ff); font-weight:600; text-transform:uppercase;
@@ -672,10 +688,6 @@ const CSS = `
 .ow-btn:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.4); }
 .ow-btn.primary { background: var(--amber); border-color: var(--amber); color:#100b02; }
 .ow-btn.primary:hover { background:#ffc251; }
-.ow-menu .hint {
-  margin-top: calc(var(--u) * 4); font-size: calc(9.5px * var(--k));
-  letter-spacing:.2em; color: var(--ink-3);
-}
 
 /* ============================================================== fadeouts */
 .ow-hidden { display:none !important; }

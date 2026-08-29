@@ -27,9 +27,8 @@ import { V, cone } from './util.js';
  *   shell casings              1 draw   instanced rigid bodies
  *   refraction sprites         1 draw   + one half-res post pass
  *
- * The simulation is entirely in the vertex shader (see particles.js), so the
- * per-frame CPU cost of ten thousand live particles is six uniform writes and
- * one buffer sub-upload of whatever was spawned this frame. Budgets come from
+ * Particle motion is evaluated in the vertex shader; AI sight queries share a
+ * per-frame cache of live smoke positions (see particles.js). Budgets come from
  * `config.q.particleBudget` / `decalBudget` and are hard caps: every layer is a
  * ring, and a ring never allocates.
  */
@@ -216,6 +215,11 @@ export class FxSystem {
   emitAdd = (s) => this.add.emit(s, this.now);
   emitLit = (s) => this.lit.emit(s, this.now);
   emitMote = (s) => this.motes.emit(s, this.now);
+
+  visibilityBetween(from, to) {
+    return this.lit.visibilityBetween(from, to, this.ctx.time.elapsed);
+  }
+
   emitViewAdd = (s) => {
     this._attachView();
     return this.viewAdd.emit(s, this.now);
@@ -381,7 +385,14 @@ export class FxSystem {
     if (!e.normal) return;
     let energy = clamp(0.7 + (e.damage ?? 25) / 55, 0.7, 1.7);
     if (e.exit === true) energy *= 0.75;
-    spawnImpact(this, e.point, e.normal, e.incident ?? this._defaultIncident(e), e.surface, energy);
+    this._bulletImpact = true;
+    this._impactOwner = e.object?.userData?.breakable;
+    try {
+      spawnImpact(this, e.point, e.normal, e.incident ?? this._defaultIncident(e), e.surface, energy);
+    } finally {
+      this._bulletImpact = false;
+      this._impactOwner = null;
+    }
     this.stats.spawned++;
   }
 
@@ -513,14 +524,16 @@ export class FxSystem {
    * @param {THREE.Vector3} normal
    */
   addDecal(point, normal, opts) {
-    if (this._suppressDecals) return false;
+    if (this._suppressDecals || this._impactOwner?.destroyed) return false;
     const o = this._decalOpts;
     this._p.copy(point);
     this._n.copy(normal);
     o.size = opts.size ?? 0.15;
     o.tile = opts.tile ?? 0;
     o.roll = opts.roll ?? this.rng.float() * Math.PI * 2;
-    o.life = opts.life ?? 60;
+    // Bullet marks last for the wave; the existing ring still bounds memory.
+    o.life = this._bulletImpact ? Infinity : opts.life ?? 60;
+    o.owner = this._impactOwner;
     o.fade = opts.fade ?? 0.72;
     o.opacity = opts.opacity ?? 1;
     o.maxAngle = opts.maxAngle ?? 62;
@@ -1264,6 +1277,18 @@ export class FxSystem {
   }
 
   /* ===================================================================== */
+
+  reset() {
+    for (const layer of [...this.layers, this.viewAdd, this.viewLit, this.hazeSys.layer]) layer.reset();
+    this.hazeSys.pass.enabled = false;
+    this.decals.reset();
+    this.shells.reset();
+    this.lights.reset();
+    this.viewLights?.reset();
+    this.ambience.reset();
+    this.debugBurst('none');
+    this.stats.spawned = this.stats.decals = this.stats.live = 0;
+  }
 
   dispose() {
     for (const off of this._off ?? []) off();

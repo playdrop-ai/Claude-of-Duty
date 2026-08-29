@@ -1,0 +1,89 @@
+.ow-touch {
+  position: absolute; inset: 0; z-index: 20; display: none;
+  --touch-left: max(12px, env(safe-area-inset-left));
+  --touch-right: max(12px, env(safe-area-inset-right));
+  --touch-bottom: max(10px, env(safe-area-inset-bottom));
+  pointer-events: none; touch-action: none; -webkit-touch-callout: none;
+}
+.ow-touch-look { position: absolute; inset: 0 0 0 50%; pointer-events: auto; touch-action: none; }
+.ow-touch-move {
+  position: absolute; inset: 0 50% 0 0; pointer-events: auto; touch-action: none;
+}
+.ow-touch-move .back {
+  background: rgba(8, 14, 18, .25) !important;
+  border: 1px solid rgba(242, 246, 248, .55); opacity: 1 !important;
+  box-shadow: inset 0 0 0 10px rgba(240, 245, 247, .035);
+}
+.ow-touch-move .front {
+  background: rgba(235, 243, 246, .15) !important;
+  border: 1px solid rgba(242, 246, 248, .75); opacity: 1 !important;
+}
+.ow-touch-move.sprinting .back { border-color: #fff; }
+.ow-touch-button {
+  position: absolute; z-index: 2; width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  border: 1px solid rgba(242, 246, 248, .45); border-radius: 50%;
+  background: rgba(9, 15, 19, .32); color: rgba(243, 246, 248, .95);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, .2); cursor: pointer;
+  pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.ow-touch-button svg { width: 25px; height: 25px; filter: drop-shadow(0 1px 1px #000); pointer-events: none; }
+.ow-touch-button:active, .ow-touch-button[aria-pressed="true"] {
+  background: rgba(242, 246, 248, .2); border-color: #fff;
+}
+.ow-touch-button:disabled { opacity: .3; }
+/* A staggered thumb arc, leaving the center-right swipe lane unobstructed. */
+.ow-touch-ads { right: calc(var(--touch-right) + 94px); bottom: calc(var(--touch-bottom) + 100px); }
+.ow-touch-grenade { right: calc(var(--touch-right) + 20px); bottom: calc(var(--touch-bottom) + 145px); }
+.ow-touch-jump { right: var(--touch-right); bottom: calc(var(--touch-bottom) + 80px); }
+.ow-touch-crouch { right: calc(var(--touch-right) + 45px); bottom: calc(var(--touch-bottom) + 14px); }
+.ow-touch-pause { right: var(--touch-right); top: max(10px, env(safe-area-inset-top)); width: 44px; height: 44px; }
+.ow-touch-count { position: absolute; right: 4px; top: 0; font: 700 17px/1 var(--fd); text-shadow: 0 1px 3px #000; }
+.ow-touch-loadout {
+  position: absolute; z-index: 2; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--touch-bottom) + 30px); width: min(276px, 42vw);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  pointer-events: auto;
+}
+.ow-touch-weapon {
+  position: relative; min-width: 0; min-height: 64px; padding: 3px 2px 5px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;
+  color: rgba(243, 246, 248, .65); background: linear-gradient(transparent, rgba(9, 15, 19, .3));
+  border: 0; border-bottom: 2px solid rgba(243, 246, 248, .24); border-radius: 0;
+  text-shadow: 0 1px 3px #000; cursor: pointer; touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ow-touch-weapon.selected { color: #fff; border-bottom-color: #fff; }
+.ow-touch-weapon:active { background: rgba(242, 246, 248, .16); }
+.ow-touch-gun { width: 46px; height: 20px; filter: drop-shadow(0 1px 2px #000); }
+.ow-touch-weapon-detail { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.ow-touch-weapon-name { font: 600 9px/1.2 var(--fm); letter-spacing: .08em; }
+.ow-touch-weapon-ammo { display: none; align-items: baseline; gap: 3px; white-space: nowrap; font: 500 12px/1 var(--fd); }
+.ow-touch-weapon.selected .ow-touch-weapon-ammo { display: flex; }
+.ow-touch-weapon-ammo b { font: 700 25px/1 var(--fd); }
+.ow-touch-reload-hint { align-self: center; opacity: .75; }
+.ow-touch-reload-hint svg { display: block; width: 13px; height: 13px; }
+.ow-touch-reload-progress { position: absolute; bottom: -2px; left: 0; width: 100%; height: 2px; background: #fff; transform: scaleX(0); transform-origin: left; }
+.ow-touch-weapon.reloading { border-bottom-color: rgba(243, 246, 248, .24); }
+.ow-touch-weapon > *, .ow-touch-weapon-detail > * { pointer-events: none; }
+.ow-mobile { --pad: 14px; }
+.ow-mobile .ow-ammo { right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+.ow-touch-layout .ow-ammo { display: none; }
+.ow-mobile .ow-vitals { left: calc(max(12px, env(safe-area-inset-left)) + 12px); bottom: max(10px, env(safe-area-inset-bottom)); }
+.ow-touch-layout .ow-vitals { left: 50%; transform: translateX(-50%); width: min(276px, 42vw); }
+.ow-touch-layout .ow-vt-head { justify-content: center; margin-bottom: 3px; }
+.ow-touch-layout .ow-vt-lbl, .ow-touch-layout .ow-vt-num i, .ow-touch-layout .ow-vt-track u { display: none; }
+.ow-touch-layout .ow-vt-num { font-size: 18px; }
+.ow-touch-layout .ow-vt-track { height: 3px; }
+.ow-mobile .ow-minimap { left: calc(max(12px, env(safe-area-inset-left)) + 12px); top: calc(max(10px, env(safe-area-inset-top)) + 5px); }
+.ow-mobile .ow-mm-n, .ow-mobile .ow-mm-tag { display: none; }
+.ow-mobile .ow-kf { right: calc(max(12px, env(safe-area-inset-right)) + 60px); top: 16px; }
+.ow-mobile .ow-menu { z-index: 40; }
+.ow-mobile .ow-menu-inner { width: min(300px, 75vw); padding: 22px; }
+.ow-mobile .ow-menu h1 { font-size: 28px; }
+.ow-mobile .ow-btn, .ow-mobile .ow-death-button { min-height: 48px; font-size: 12px; min-width: 190px; }
+.ow-mobile .ow-death-title { font-size: clamp(26px, 4.5vw, 38px); letter-spacing: .1em; }
+.ow-mobile .ow-death-kicker { font-size: 10px; }
+.ow-mobile .ow-death, .ow-mobile .ow-menu {
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}

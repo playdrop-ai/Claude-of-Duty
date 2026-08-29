@@ -24,6 +24,7 @@ uniform sampler3D tLut;
 
 uniform vec2 uTexel;
 uniform vec2 uResolution;
+uniform float uUpscale;
 uniform vec4 uLens;      // x chromatic, y vignette, z grainAmount, w time
 uniform vec4 uGrade;     // x bloomStrength, y lutStrength, z sharpen, w lutSize
 uniform vec4 uLook;      // x agx slope, y agx power, z agx sat, w exposureBias
@@ -43,17 +44,14 @@ void main() {
 
   // --- chromatic aberration: sample the scene three times with a radial
   //     offset that grows toward the corners, like a real lens
-  vec3 hdr;
+  vec3 centre = max( texture2D( tColor, vUv ).rgb, vec3( 0.0 ) );
+  vec3 hdr = centre;
   float ca = uLens.x * r2;
   if ( ca > 0.00002 ) {
     vec2 o = d * ca;
     hdr.r = texture2D( tColor, vUv + o ).r;
-    hdr.g = texture2D( tColor, vUv ).g;
     hdr.b = texture2D( tColor, vUv - o ).b;
-  } else {
-    hdr = texture2D( tColor, vUv ).rgb;
   }
-  vec3 centre = max( texture2D( tColor, vUv ).rgb, vec3( 0.0 ) );
   hdr = max( hdr, vec3( 0.0 ) );
 
   vec3 n1 = max( texture2D( tColor, vUv + vec2( uTexel.x, 0.0 ) ).rgb, vec3( 0.0 ) );
@@ -97,7 +95,11 @@ void main() {
     float lblur = ( l1 + l2 + l3 + l4 ) * 0.25;
     // contrast adaptive: less sharpening where local contrast is already high
     float contrast = ( lmx - lmn ) / ( lmx + lmn + 0.02 );
-    float amount = uGrade.z * ( 1.0 - clamp( contrast * 1.6, 0.0, 1.0 ) );
+    float edgeRetention = uUpscale * 0.55;
+    float amount = uGrade.z * mix(
+      1.0,
+      edgeRetention,
+      clamp( contrast * 1.6, 0.0, 1.0 ) );
     // ...and none at all down in the noise floor, where "detail" is grain.
     amount *= smoothstep( 0.004, 0.03, lc );
     float gain = ( lc + ( lc - lblur ) * amount ) / max( lc, 1e-4 );
@@ -329,6 +331,7 @@ export function createComposite(lut) {
     tLut: { value: lut.texture },
     uTexel: { value: new THREE.Vector2() },
     uResolution: { value: new THREE.Vector2() },
+    uUpscale: { value: 0 },
     uLens: { value: new THREE.Vector4(0.0016, 0.24, 0.010, 0) },
     uGrade: { value: new THREE.Vector4(0.05, 0.85, 0.22, lut.size) },
     // slope / power / saturation of the AgX look, applied to the LOG-NORMALISED

@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-08-25",
+  "generator": "OpenAI built-in image generation",
+  "delivery": {
+    "width": 1920,
+    "height": 1080,
+    "format": "png"
+  },
+  "disclosure": "AI-generated promotional composites based on real Claude of Duty gameplay captures. These are not literal gameplay screenshots.",
+  "items": [
+    {
+      "path": "landscape/01-enter-the-firefight.png",
+      "headline": "ENTER THE FIREFIGHT",
+      "truthReferences": [
+        "Matt Shumer's original gameplay footage",
+        "Fresh gameplay capture from the adapted build",
+        "hero/hero-landscape.png"
+      ]
+    },
+    {
+      "path": "landscape/02-outthink-the-enemy.png",
+      "headline": "OUTTHINK THE ENEMY",
+      "truthReferences": [
+        "Matt Shumer's original gameplay footage",
+        "Fresh gameplay capture from the adapted build",
+        "hero/hero-landscape.png"
+      ]
+    },
+    {
+      "path": "landscape/03-generated-in-code.png",
+      "headline": "GENERATED IN CODE",
+      "truthReferences": [
+        "Matt Shumer's original gameplay footage",
+        "Fresh gameplay capture from the adapted build",
+        "hero/hero-landscape.png"
+      ]
+    },
+    {
+      "path": "landscape/04-the-gauntlet-original.png",
+      "headline": "THE GAUNTLET ORIGINAL",
+      "truthReferences": [
+        "Matt Shumer's original gameplay footage",
+        "Fresh gameplay capture from the adapted build",
+        "hero/hero-landscape.png"
+      ]
+    }
+  ]
+}

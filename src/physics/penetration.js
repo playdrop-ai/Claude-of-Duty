@@ -42,6 +42,7 @@ export class Ballistics {
       });
     }
     this.impactCount = 0;
+    this.hitActors = new Set();
   }
 
   /**
@@ -72,6 +73,7 @@ export class Ballistics {
     const emit = o.emit !== false;
 
     this.impactCount = 0;
+    this.hitActors.clear();
 
     for (let layer = 0; layer < MAX_LAYERS && remaining > 0.01; layer++) {
       const hit = phys.raycast(ox, oy, oz, dx, dy, dz, remaining, mask);
@@ -84,6 +86,14 @@ export class Ballistics {
 
       const si = hit.surfaceIndex;
       const props = SURFACE_PROPS[si] ?? SURFACE_PROPS[0];
+      const damageActor = !hit.actor || !this.hitActors.has(hit.actor);
+      if (hit.actor) this.hitActors.add(hit.actor);
+      const budget = props.penDepth * power;
+      // Damage callbacks can remove a killed actor or destroy the struck prop.
+      // Measure the solid before those callbacks change its collision geometry.
+      const thick = budget > 1e-4
+        ? this._measureThickness(hit, dx, dy, dz, mask, Math.min(EXIT_PROBE, remaining))
+        : null;
 
       this._push(hit.point, hit.normal, si, false, damage * rangeMul, travelled, hit.object);
       if (emit) {
@@ -91,13 +101,13 @@ export class Ballistics {
           hit.point.x, hit.point.y, hit.point.z,
           hit.normal.x, hit.normal.y, hit.normal.z,
           dx, dy, dz,
-          si, damage * rangeMul, false, hit
+          si, damage * rangeMul, false, hit, damageActor
         );
       }
 
       // Actors and dynamic bodies take the hit and the round keeps going only
       // if it has plenty of budget left (flesh is soft but a torso is thick).
-      if (hit.collider && hit.collider.onHit) {
+      if (emit && damageActor && hit.collider && hit.collider.onHit) {
         hit.collider.onHit(hit, damage * rangeMul, dx, dy, dz);
       }
       if (hit.body) {
@@ -113,10 +123,7 @@ export class Ballistics {
       }
 
       // ---- can we get through? ----
-      const budget = props.penDepth * power;
       if (budget <= 1e-4) break;
-
-      const thick = this._measureThickness(hit, dx, dy, dz, mask, Math.min(EXIT_PROBE, remaining));
       if (thick.distance > budget) break; // round stops in the material
 
       const frac = thick.distance / budget;
@@ -181,14 +188,29 @@ export class Ballistics {
     const out = this._thick ?? (this._thick = {
       distance: 0,
       point: { x: 0, y: 0, z: 0 },
-      normal: { x: 0, y: 0, z: 0 },
+      normal: entry.normal.clone(),
       backface: false,
     });
+
+    if (entry.collider) {
+      // A limb may overlap another limb. Trace the entered collider itself,
+      // not the nearest shape, and never treat a closed proxy as a thin sheet.
+      const distance = entry.collider.raycast(ox, oy, oz, dx, dy, dz, probe);
+      out.distance = distance < 0 ? Infinity : distance + eps;
+      out.point.x = ox + dx * distance;
+      out.point.y = oy + dy * distance;
+      out.point.z = oz + dz * distance;
+      phys._colliderNormal(entry.collider, out.point, out.normal, dx, dy, dz);
+      out.normal.x = -out.normal.x; out.normal.y = -out.normal.y; out.normal.z = -out.normal.z;
+      out.backface = true;
+      return out;
+    }
 
     const h = phys.raycast(ox, oy, oz, dx, dy, dz, probe, mask);
     const sameSolid =
       h.hit && !h.frontFace &&
-      (h.object === entry.object || h.collider === entry.collider);
+      (entry.body ? h.body === entry.body : entry.ragdoll ? h.ragdoll === entry.ragdoll :
+        entry.object != null && h.object === entry.object && !h.collider && !h.body && !h.ragdoll);
 
     if (sameSolid) {
       out.distance = h.distance + eps;

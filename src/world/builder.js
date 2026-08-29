@@ -15,16 +15,16 @@ import { PALETTE } from './palette.js';
  *   box(surface, ...)             add an axis-aligned collision proxy
  *   light(light, opts)            register a punctual light with `render`
  *
- * Collision is authored separately from the visual mesh: proxies are cheap
- * boxes generated from the same numbers that built the geometry, so a doorway
- * is a real hole in the collision hull and the BVH stays in the low thousands
- * of triangles instead of chewing on every chamfer.
+ * Most collision uses simple authored proxies. A few open-frame props opt in
+ * to their exact mesh, so visible gaps stay open without a second shape model.
  */
 
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 const _m = new THREE.Matrix4();
 const _xm = new THREE.Matrix4();
 const _v = new THREE.Vector3();
+const _size = new THREE.Vector3();
+const _partMatrix = new THREE.Matrix4();
 const _sph = new THREE.Sphere();
 const _q = new THREE.Quaternion();
 const _one = new THREE.Vector3(1, 1, 1);
@@ -44,13 +44,17 @@ export class Assembler {
     this.rng = rng;
     this.render = render;
     this._mats = new Map(); // palette key -> THREE.Material
-    this._static = new Map(); // palette key -> Accum
+    this._static = new Map(); // palette key + shadow policy -> Accum
     this._protos = new Map(); // id -> { geo, key, instances[], masks[], opts }
     this._collide = new Map(); // surface -> Accum
     this._geoCache = new Map(); // kit piece key -> BufferGeometry
+    this._partCache = new Map(); // final prototype -> shared component geometries
+    this._ownedParts = [];
     this.lights = [];
     this.meshes = [];
     this.lodGroups = [];
+    this.breakables = [];
+    this._breakable = null;
     /**
      * LEVEL -> WORLD. The map is authored around a street running down -Z, then
      * placed in the world so the canonical hero camera looks straight along it.
@@ -130,12 +134,24 @@ export class Assembler {
   // --------------------------------------------------------- static batch --
   /** Merge a transformed geometry into the batch for `key`. */
   add(key, geo, matrix = null, opts = null) {
-    let a = this._static.get(key);
+    const castShadow = geo.userData.castShadow !== false;
+    const batchKey = castShadow ? key : `${key}:noShadow`;
+    let a = this._static.get(batchKey);
     if (!a) {
-      a = new Accum(`world:${key}`);
-      this._static.set(key, a);
+      a = new Accum(`world:${batchKey}`);
+      a.key = key;
+      a.castShadow = castShadow;
+      this._static.set(batchKey, a);
     }
+    const start = a.idx.length, vertexStart = a.verts;
     a.add(geo, this._x(matrix), opts);
+    if (this._breakable) {
+      const parts = geo.userData.parts ?? [{ start: 0, count: a.verts - vertexStart, indexStart: 0, indexCount: a.idx.length - start }];
+      for (const part of parts) this._breakable.ranges.push({
+        key: batchKey, start: start + part.indexStart, count: part.indexCount,
+        vertexStart: vertexStart + part.start, vertexCount: part.count,
+      });
+    }
     return this;
   }
 
@@ -205,7 +221,11 @@ export class Assembler {
       maxDist: spec.maxDist ?? 0,
       matrices: [],
       masks: [],
+      owners: [],
       noPrepass: !!spec.noPrepass,
+      collide: !!spec.collide,
+      breakable: spec.breakable ?? 0,
+      collideParts: !!spec.collideParts,
     });
     return id;
   }
@@ -221,8 +241,28 @@ export class Assembler {
       console.warn(`[world] no prop prototype "${id}"`);
       return this;
     }
-    p.matrices.push(this._x(matrix).clone());
+    const worldMatrix = this._x(matrix).clone();
+    let owner = id === 'dust_skirt' ? null : this._breakable;
+    if (p.breakable && !owner) {
+      this.beginBreakable(id.startsWith('crate_') ? 'crate' : id.startsWith('box_card_') ? 'box' : id, p.breakable);
+      owner = this._breakable;
+      this.endBreakable();
+    }
+    p.matrices.push(worldMatrix);
     p.masks.push(masks ? [masks[0], masks[1], masks[2]] : null);
+    p.owners.push(owner);
+    if (p.collide) {
+      this._collision(this.surfaceOf(p.key), p.geo, worldMatrix, owner);
+    } else if (p.breakable) {
+      const geometries = p.collideParts ? this._parts(p.geo) : [p.geo];
+      for (const geometry of geometries) {
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        geometry.boundingBox.getCenter(_v);
+        geometry.boundingBox.getSize(_size);
+        _partMatrix.makeScale(_size.x, _size.y, _size.z).setPosition(_v).premultiply(worldMatrix);
+        this._collision(this.surfaceOf(p.key), UNIT_BOX, _partMatrix, owner);
+      }
+    }
     return this;
   }
 
@@ -270,40 +310,87 @@ export class Assembler {
     return this._protos.get(id)?.matrices.length ?? 0;
   }
 
+  beginBreakable(kind, health) {
+    if (this._breakable) throw new Error('[world] Breakable groups cannot nest');
+    const group = { kind, health, maxHealth: health, destroyed: false, ranges: [], instances: [], parts: [], collision: new Map(), handles: [], bounds: new THREE.Box3() };
+    this.breakables.push(group);
+    this._breakable = group;
+  }
+
+  endBreakable() {
+    if (!this._breakable) throw new Error('[world] No breakable group to finish');
+    this._breakable = null;
+  }
+
   // ------------------------------------------------------------ collision --
-  /** Axis-aligned (or Y-rotated) box collision proxy. */
-  box(surface, cx, cy, cz, sx, sy, sz, ry = 0) {
-    let a = this._collide.get(surface);
+  _collision(surface, geometry, worldMatrix, owner = this._breakable) {
+    const collision = owner?.collision ?? this._collide;
+    let a = collision.get(surface);
     if (!a) {
       a = new Accum(`collide:${surface}`);
-      this._collide.set(surface, a);
+      collision.set(surface, a);
     }
-    a.add(UNIT_BOX, this._x(trs(_m, cx, cy, cz, ry, sx, sy, sz)));
+    a.add(geometry, worldMatrix);
     return this;
+  }
+
+  /** Axis-aligned (or Y-rotated) box collision proxy. */
+  box(surface, cx, cy, cz, sx, sy, sz, ry = 0) {
+    return this._collision(surface, UNIT_BOX, this._x(trs(_m, cx, cy, cz, ry, sx, sy, sz)));
   }
 
   /** Register real triangles as collision (ramps, terrain, odd shapes). */
   collideGeo(surface, geo, matrix = null) {
-    let a = this._collide.get(surface);
-    if (!a) {
-      a = new Accum(`collide:${surface}`);
-      this._collide.set(surface, a);
-    }
-    a.add(geo, this._x(matrix));
-    return this;
+    return this._collision(surface, geo, this._x(matrix));
   }
 
   /** A wall slab given in panel space, placed by the panel's matrix. */
   slabBox(surface, panelMatrix, x, y, w, h, t) {
     trs(_m, x, y, t * 0.5, 0, w, h, t);
     _m.premultiply(panelMatrix);
-    let a = this._collide.get(surface);
-    if (!a) {
-      a = new Accum(`collide:${surface}`);
-      this._collide.set(surface, a);
+    return this._collision(surface, UNIT_BOX, this._x(_m));
+  }
+
+  /** Extract authored components after all prototype transforms/masks are final. */
+  _parts(geometry) {
+    let parts = this._partCache.get(geometry);
+    if (parts) return parts;
+    const vertexCount = geometry.getAttribute('position').count;
+    const indexCount = geometry.index?.count ?? vertexCount;
+    const ranges = geometry.userData.parts ?? [{ start: 0, count: vertexCount, indexStart: 0, indexCount }];
+    let vertexEnd = 0, indexEnd = 0;
+    parts = ranges.map((range) => {
+      if (range.start !== vertexEnd || range.indexStart !== indexEnd) throw new Error('[world] Prop parts must cover geometry once in order');
+      vertexEnd += range.count;
+      indexEnd += range.indexCount;
+      return this._extractPart(geometry, range);
+    });
+    if (vertexEnd !== vertexCount || indexEnd !== indexCount) throw new Error('[world] Prop parts omit geometry');
+    this._partCache.set(geometry, parts);
+    return parts;
+  }
+
+  _extractPart(source, { start, count, indexStart, indexCount }) {
+    if (count <= 0 || indexCount <= 0 || start < 0 || start + count > source.getAttribute('position').count ||
+      indexStart < 0 || indexStart + indexCount > (source.index?.count ?? source.getAttribute('position').count)) {
+      throw new Error('[world] Invalid prop component range');
     }
-    a.add(UNIT_BOX, this._x(_m));
-    return this;
+    const geometry = new THREE.BufferGeometry();
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+      geometry.setAttribute(name, new THREE.BufferAttribute(
+        attribute.array.slice(start * attribute.itemSize, (start + count) * attribute.itemSize), attribute.itemSize, attribute.normalized
+      ));
+    }
+    const indices = count > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
+    for (let i = 0; i < indexCount; i++) {
+      const vertex = (source.index ? source.index.array[indexStart + i] : indexStart + i) - start;
+      if (vertex < 0 || vertex >= count) throw new Error('[world] Prop component index crosses another part');
+      indices[i] = vertex;
+    }
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeBoundingBox();
+    this._ownedParts.push(geometry);
+    return geometry;
   }
 
   /** Register a punctual light. Position is in LEVEL space. */
@@ -316,20 +403,23 @@ export class Assembler {
   // ------------------------------------------------------------- finalize --
   /** Build the meshes, add them to `root`, register collision with physics. */
   finalize(root, physics) {
+    if (this._breakable) throw new Error('[world] Unfinished breakable group');
+    const batches = new Map();
     // --- merged static geometry ---
     for (const [key, acc] of this._static) {
       if (acc.empty) continue;
       const geo = acc.build();
-      const mesh = new THREE.Mesh(geo, this.mat(key));
+      const mesh = new THREE.Mesh(geo, this.mat(acc.key));
       mesh.name = `world_${key}`;
-      mesh.castShadow = true;
+      mesh.castShadow = acc.castShadow;
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
-      mesh.userData.surface = this.surfaceOf(key);
+      mesh.userData.surface = this.surfaceOf(acc.key);
       mesh.userData.collision = false; // proxies own collision
       mesh.updateMatrix();
       root.add(mesh);
       this.meshes.push(mesh);
+      batches.set(key, mesh);
       this.stats.staticTris += geo.index.count / 3;
       this.stats.drawCalls++;
     }
@@ -357,6 +447,7 @@ export class Assembler {
       }
 
       const mat = this.mat(p.key);
+      const parts = p.owners.some(Boolean) ? this._parts(p.geo) : [];
       for (const list of buckets.values()) {
         const im = new THREE.InstancedMesh(p.geo, mat, list.length);
         im.name = `prop_${p.id}`;
@@ -378,7 +469,19 @@ export class Assembler {
           }
           im.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
         }
-        for (let j = 0; j < list.length; j++) im.setMatrixAt(j, p.matrices[list[j]]);
+        for (let j = 0; j < list.length; j++) {
+          const original = p.matrices[list[j]];
+          im.setMatrixAt(j, original);
+          const owner = p.owners[list[j]];
+          if (owner) {
+            owner.instances.push({ mesh: im, index: j, original });
+            for (const geometry of parts) owner.parts.push({
+              geometry, matrix: original, prototype: p.id, material: mat, surface: this.surfaceOf(p.key), masks: p.masks[list[j]] ?? [1, 1, 1],
+            });
+            p.geo.computeBoundingBox();
+            owner.bounds.union(p.geo.boundingBox.clone().applyMatrix4(original));
+          }
+        }
         im.instanceMatrix.needsUpdate = true;
         im.computeBoundingSphere();
         im.updateMatrix();
@@ -395,6 +498,7 @@ export class Assembler {
       }
       p.matrices.length = 0;
       p.masks.length = 0;
+      p.owners.length = 0;
     }
 
     // --- collision proxies ---
@@ -414,6 +518,32 @@ export class Assembler {
       this.collisionRoot.add(mesh);
       this.stats.collideTris += geo.index.count / 3;
       if (physics) this.handles.push(physics.addStatic(mesh, surface));
+    }
+    for (const group of this.breakables) {
+      for (const range of group.ranges) {
+        range.mesh = batches.get(range.key);
+        const index = range.mesh.geometry.index;
+        range.original = index.array.slice(range.start, range.start + range.count);
+        const geometry = this._extractPart(range.mesh.geometry, {
+          start: range.vertexStart, count: range.vertexCount, indexStart: range.start, indexCount: range.count,
+        });
+        group.parts.push({ geometry, matrix: new THREE.Matrix4(), material: range.mesh.material, surface: range.mesh.userData.surface, masks: [1, 1, 1] });
+        const position = range.mesh.geometry.getAttribute('position');
+        for (const vertex of range.original) group.bounds.expandByPoint(_v.fromBufferAttribute(position, vertex));
+      }
+      for (const [surface, acc] of group.collision) {
+        const geo = acc.build();
+        const mesh = new THREE.Mesh(geo, INVISIBLE);
+        mesh.name = `breakable_${group.kind}`;
+        mesh.userData.breakable = group;
+        mesh.visible = false;
+        this.collisionRoot.add(mesh);
+        geo.computeBoundingBox();
+        group.bounds.union(geo.boundingBox);
+        group.handles.push(physics.addStatic(mesh, surface));
+        this.stats.collideTris += geo.index.count / 3;
+      }
+      group.collision.clear();
     }
     if (physics) physics.rebuildStatic();
 
@@ -439,6 +569,9 @@ export class Assembler {
 
   dispose() {
     this.releaseCache();
+    for (const geometry of this._ownedParts) geometry.dispose();
+    this._ownedParts.length = 0;
+    this._partCache.clear();
     for (const m of this.meshes) {
       // instanced meshes share a prototype geometry — the prototype frees it
       if (!m.isInstancedMesh) m.geometry?.dispose();
@@ -447,6 +580,7 @@ export class Assembler {
     for (const c of this.collisionRoot?.children ?? []) c.geometry?.dispose();
     this.meshes.length = 0;
     this.lodGroups.length = 0;
+    this.breakables.length = 0;
     for (const p of this._protos.values()) p.geo?.dispose();
     this._protos.clear();
     this._static.clear();

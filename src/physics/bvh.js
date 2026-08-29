@@ -158,6 +158,15 @@ export class StaticWorld {
     return -1;
   }
 
+  /** Keep the BVH shape fixed; destroyed props stop participating immediately. */
+  setEnabled(id, enabled) {
+    const object = this.objects[id];
+    if (!object?.alive) throw new Error(`[physics] Unknown static object ${id}`);
+    object.enabled = enabled;
+    if (!this.dirty) this.mask.fill(enabled ? object.mask : 0, object.start, object.start + object.triCount);
+    this.version++;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Build                                                             */
   /* ---------------------------------------------------------------- */
@@ -193,10 +202,11 @@ export class StaticWorld {
     let w = 0;
     for (const o of this.objects) {
       if (!o || !o.alive) continue;
+      o.start = w;
       pos.set(o.tris.subarray(0, o.triCount * 9), w * 9);
       for (let i = 0; i < o.triCount; i++) {
         this.surface[w + i] = o.surfaces ? o.surfaces[i] : o.surface;
-        this.mask[w + i] = o.mask;
+        this.mask[w + i] = o.enabled === false ? 0 : o.mask;
         this.object[w + i] = o.id;
       }
       w += o.triCount;

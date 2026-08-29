@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cutoutUniforms, updateCutout, CUTOUT_PARS, CUTOUT_TEST } from './cutout.js';
 
 /**
  * Cascaded shadow maps, done properly.
@@ -81,12 +82,15 @@ export class CascadedShadowMaps {
     this.depthMaterial = new THREE.ShaderMaterial({
       name: 'csm-depth',
       side: THREE.DoubleSide,
+      uniforms: cutoutUniforms(),
       vertexShader: /* glsl */ `
         #include <common>
         #include <batching_pars_vertex>
         #include <skinning_pars_vertex>
         #include <morphtarget_pars_vertex>
+        varying vec2 vAlphaUv;
         void main() {
+          vAlphaUv = uv;
           #include <batching_vertex>
           #include <beginnormal_vertex>
           #include <morphinstance_vertex>
@@ -100,9 +104,18 @@ export class CascadedShadowMaps {
         }
       `,
       fragmentShader: /* glsl */ `
-        void main() { gl_FragColor = vec4( gl_FragCoord.z, 0.0, 0.0, 1.0 ); }
+        ${CUTOUT_PARS}
+        void main() {
+          ${CUTOUT_TEST}
+          gl_FragColor = vec4( gl_FragCoord.z, 0.0, 0.0, 1.0 );
+        }
       `,
     });
+    this.depthMaterial.onBeforeRender = (renderer, scene, camera, geometry, object, group) => {
+      const source = Array.isArray(object.material) ? object.material[group.materialIndex] : object.material;
+      updateCutout(this.depthMaterial.uniforms, source);
+      this.depthMaterial.uniformsNeedUpdate = true;
+    };
 
     this._splits = new Float32Array(this.cascades + 1);
     this._prevClear = new THREE.Color();
@@ -173,6 +186,8 @@ export class CascadedShadowMaps {
       _v.copy(_center).addScaledVector(sunDir, r + this.backDistance);
       cam.position.copy(_v);
       cam.up.copy(up);
+      // lookAt reads matrixWorld; these cameras use manual matrix updates.
+      cam.updateMatrix();
       cam.lookAt(_center);
       cam.updateMatrix();
       cam.matrixWorld.copy(cam.matrix);

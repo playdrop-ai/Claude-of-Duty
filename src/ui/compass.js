@@ -1,4 +1,4 @@
-import { el, setText, setStyle, clamp, Pool, mmss } from './util.js';
+import { el, setText, setStyle, clamp, Pool } from './util.js';
 
 const SPAN_DEG = 120; // degrees visible across the strip
 const STRIP_W = 470; // css px at k=1, must match .ow-compass width
@@ -92,23 +92,20 @@ export class Compass {
   }
 }
 
-/** Slim scoreline under the compass — sells "match in progress" in one line. */
+/** Wave objective, read directly from the live round and enemy count. */
 export class MatchBar {
   constructor(parent) {
     this.root = el('div', 'ow-match', parent);
-    this.us = el('b', 'us', this.root, '43');
+    this.mode = el('div', null, this.root, 'WAVE 1');
     el('div', 'sep', this.root);
-    this.mode = el('div', null, this.root, 'TDM');
-    this.clock = el('div', 'clock', this.root, '4:12');
-    el('div', 'sep', this.root);
-    this.them = el('b', 'them', this.root, '38');
+    this.remaining = el('b', 'them', this.root, '6');
+    this.label = el('div', null, this.root, 'HOSTILES');
   }
 
   update(s) {
-    setText(this.us, s.scoreUs ?? 0);
-    setText(this.them, s.scoreThem ?? 0);
-    setText(this.mode, s.mode ?? 'TDM');
-    setText(this.clock, mmss(s.timeLeft ?? 0));
+    setText(this.mode, `WAVE ${s.wave}`);
+    setText(this.remaining, s.remaining);
+    setText(this.label, s.remaining === 1 ? 'HOSTILE' : 'HOSTILES');
   }
 
   dispose() {

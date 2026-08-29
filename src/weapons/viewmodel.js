@@ -245,6 +245,7 @@ export class Viewmodel {
     this.noiseT = 0;
     this.triggerT = 0;
     this.triggerTarget = 0;
+    this.deathT = 0;
 
     this.lag = new Spring3(5.4, 0.46);
     this.lagRot = new Spring3(6.2, 0.42);
@@ -621,7 +622,7 @@ export class Viewmodel {
 
   /**
    * @param {number} dt
-   * @param {object} s  { ads, sprint, lowReady, speed, crouch, airborne,
+   * @param {object} s  { ads, sprint, lowReady, speed, crouch, airborne, dead,
    *                      trigger, empty, cycleTime }
    */
   update(dt, s) {
@@ -814,6 +815,18 @@ export class Viewmodel {
         this.stopClip();
       }
     }
+
+    // Leave the normal locomotion and handling stack behind when killed. The
+    // camera falls with the body while the arms and weapon rotate down and out
+    // of their ready pose, so the last frame cannot read as ordinary idle play.
+    this.deathT = s.dead ? damp(this.deathT, 1, 5.2, dt) : 0;
+    const death = smootherstep(0, 1, this.deathT);
+    px += death * 0.1;
+    py -= death * 0.62;
+    pz += death * 0.12;
+    rx += death * 0.78;
+    ry -= death * 0.2;
+    rz += death * 0.72;
 
     /* -------- compose -------------------------------------------------- */
     this.rig.position.set(

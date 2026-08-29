@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { weaponDamageAtRange } from './defs.js';
 
 /**
  * Projectile ballistics.
@@ -22,12 +23,14 @@ class Projectile {
     this.vel = new THREE.Vector3();
     this.dir = new THREE.Vector3();
     this.damage = 30;
+    this.minDamage = 20;
+    this.damageFalloffStart = 20;
+    this.damageFalloffEnd = 80;
     this.penetration = 1;
     this.dragK = 0.3;
     this.travelled = 0;
     this.maxRange = 400;
     this.age = 0;
-    this.dropoff = 0.5;
     this.weapon = null;
     this.mask = undefined;
   }
@@ -53,8 +56,9 @@ export class ProjectileSim {
   }
 
   /**
-   * @param {object} o origin, dir (unit), speed, damage, penetration, dragK,
-   *                   maxRange, dropoff, weapon, tracer
+   * @param {object} o origin, dir (unit), speed, damage, minDamage,
+   *                   damageFalloffStart, damageFalloffEnd, penetration,
+   *                   dragK, maxRange, weapon, tracer
    */
   spawn(o) {
     let p = null;
@@ -75,10 +79,12 @@ export class ProjectileSim {
     p.prev.copy(o.origin);
     p.dir.copy(o.dir).normalize();
     p.vel.copy(p.dir).multiplyScalar(o.speed ?? 800);
-    p.damage = o.damage ?? 30;
+    p.damage = o.damage;
+    p.minDamage = o.minDamage;
+    p.damageFalloffStart = o.damageFalloffStart;
+    p.damageFalloffEnd = o.damageFalloffEnd;
     p.penetration = o.penetration ?? 1;
     p.dragK = o.dragK ?? 0.3;
-    p.dropoff = o.dropoff ?? 0.5;
     p.maxRange = o.maxRange ?? 400;
     p.travelled = 0;
     p.age = 0;
@@ -128,13 +134,11 @@ export class ProjectileSim {
         if (hit?.hit) {
           // Contact: hand the round to the penetration solver, which emits
           // `bullet:impact` for every entry and exit face it goes through.
-          const range01 = Math.min(1, p.travelled / p.maxRange);
-          const falloff = 1 - (1 - p.dropoff) * range01 * range01;
           phys.fireBullet({
             origin: p.prev,
             dir: this._hitDir,
             maxDist: Math.min(24, Math.max(1.5, p.maxRange - p.travelled + segLen)),
-            damage: p.damage * falloff,
+            damage: weaponDamageAtRange(p, p.travelled),
             penetration: p.penetration,
             dropoff: 1,
             mask: p.mask,

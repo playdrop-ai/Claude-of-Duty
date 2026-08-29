@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { installStyles, removeStyles } from './style.js';
-import { el, clamp, clamp01, damp, setStyle } from './util.js';
+import { el, clamp, clamp01, damp, setStyle, setText } from './util.js';
 import { Crosshair } from './crosshair.js';
 import { Hitmarkers } from './hitmarkers.js';
 import { DamageArcs } from './damage.js';
@@ -39,7 +39,6 @@ const MAX_BLIPS = 48;
  *   ui.setObjectives([{position,label,name}])
  *   ui.setBlips([{x,z,kind:'enemy'|'friend',heading}])
  *   ui.spawnGrenade(worldPos, fuse)
- *   ui.setMatch({scoreUs,scoreThem,timeLeft,mode})
  *   ui.setHudVisible(bool)              hide everything (cinematics)
  *   ui.pause() / ui.resume() / ui.menu.toggle()
  *   ui.debugState('combat'|'menu'|'clean')
@@ -49,7 +48,7 @@ const MAX_BLIPS = 48;
  * ---------------------------------------------------------------------------
  *   weapons.getHudState() -> { name, mode, ammo, reserve, magSize, reloading,
  *                              reloadProgress, ads, spread, lethalCount,
- *                              tacticalCount }
+ *                              weaponIndex, weaponCount }
  *   player.getHudState()  -> { health, maxHealth, armour, maxArmour, regen,
  *                              move, sprint, crouch, ads, airborne, position }
  *                            (or plain `player.health` / `player.position`)
@@ -91,6 +90,7 @@ export class UiSystem {
     this.prompt = new Prompt(this.chromeLayer);
     this.banner = new Banner(this.chromeLayer);
     this.menu = new PauseMenu(this.root, ctx);
+    this._buildResultScreen();
 
     this.health.onBeat = (i) => this.sfx('heartbeat', 0.35 + i * 0.5);
 
@@ -109,17 +109,16 @@ export class UiSystem {
       weaponName: 'M4A1',
       fireMode: 'AUTO',
       lethalCount: 2,
-      tacticalCount: 1,
+      weaponIndex: 0,
+      weaponCount: 3,
       move: 0,
       sprint: false,
       crouch: false,
       ads: false,
       airborne: false,
       baseSpread: 5.5,
-      scoreUs: 0,
-      scoreThem: 0,
-      timeLeft: 600,
-      mode: 'TDM',
+      wave: 1,
+      remaining: 6,
       /** true when no player/weapons subsystem is driving us (stub-safe demo) */
       simulate: false,
       time: 0,
@@ -198,7 +197,6 @@ export class UiSystem {
           mine: true,
         });
         this.banner.show('Enemy Eliminated', e.headshot ? '+150 XP · HEADSHOT' : '+100 XP');
-        this.state.scoreUs++;
       }
     });
 
@@ -240,6 +238,19 @@ export class UiSystem {
       if (e.stance !== undefined) s.crouch = e.stance === 'crouch' || e.stance === 'prone';
     });
 
+    on('wave:ended', (result) => this._showResult(result));
+    on('wave:started', () => {
+      this._hideResult();
+      this.health.reset();
+      this.killfeed.clear();
+      this.arcs.clear();
+      this.hit.clear();
+      this.markers.clear();
+      this.clearPrompt();
+      this.banner.t = 1;
+      this._prevPos.copy(this._playerPos());
+    });
+
     this.resize(ctx.canvas.clientWidth || innerWidth, ctx.canvas.clientHeight || innerHeight, ctx);
     this._prevPos.copy(this._playerPos());
   }
@@ -271,6 +282,69 @@ export class UiSystem {
     const pos = p?.position ?? p?.getPosition?.();
     if (pos && pos.isVector3) return this._pos.copy(pos);
     return this._pos.copy(this.ctx.camera.position);
+  }
+
+  _buildResultScreen() {
+    this.resultScreen = el('div', 'ow-death', this.root);
+    this.resultScreen.setAttribute('role', 'dialog');
+    this.resultScreen.setAttribute('aria-modal', 'true');
+    this.resultScreen.setAttribute('aria-labelledby', 'wave-result-title');
+    const inner = el('div', 'ow-death-inner', this.resultScreen);
+    this.resultKicker = el('div', 'ow-death-kicker', inner);
+    this.resultTitle = el('div', 'ow-death-title', inner);
+    this.resultTitle.id = 'wave-result-title';
+    el('div', 'ow-death-rule', inner);
+    this.resultDetail = el('div', 'ow-result-detail', inner);
+    this.resultButton = el('button', 'ow-death-button', inner, 'RETRY WAVE');
+    this.resultButton.type = 'button';
+    const consume = (event) => event.stopPropagation();
+    this.resultScreen.addEventListener('mousedown', consume);
+    this.resultScreen.addEventListener('mouseup', consume);
+    this.resultScreen.addEventListener('click', consume);
+    this.resultButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (event.pointerType !== 'touch' && this.ctx.input.inputMethod !== 'touch') this.ctx.input.inputMethod = 'keyboard';
+      this._restartWave();
+    });
+    this.resultActive = false;
+    this.resultReveal = 0;
+    setStyle(this.resultScreen, 'display', 'none');
+  }
+
+  _showResult({ won, number }) {
+    if (this.resultActive) return;
+    this.resultActive = true;
+    this.resultWon = won;
+    this.resultReveal = won ? 0.85 : 0;
+    this._hadPointerLock = false;
+    this.ctx.input.reset();
+    this.hit.clear();
+    this.markers.clear();
+    this.banner.t = 1;
+    this.resultScreen.classList.toggle('won', won);
+    setText(this.resultKicker, `WAVE ${number} ${won ? 'CLEARED' : 'FAILED'}`);
+    setText(this.resultTitle, won ? 'AREA SECURED' : 'KILLED IN ACTION');
+    setText(this.resultDetail, won
+      ? `Wave ${number + 1} · ${Math.min(12, number + 6)} hostiles${number >= 7 ? ' · Tougher opponents' : ''} · Full resupply`
+      : 'Restart this wave · Full resupply · Terrain restored');
+    this.resultButton.disabled = true;
+    setStyle(this.resultScreen, 'display', 'flex');
+    setStyle(this.resultScreen, 'opacity', '0');
+    document.exitPointerLock?.();
+  }
+
+  _hideResult() {
+    this.resultActive = false;
+    this.resultReveal = 0;
+    setStyle(this.resultScreen, 'display', 'none');
+    setStyle(this.resultScreen, 'opacity', '0');
+  }
+
+  _restartWave() {
+    if (!this.resultActive || this.resultButton.disabled || this.ctx.input.hostPaused) return;
+    this.ctx.get('waves').restart();
+    this.ctx.canvas.focus({ preventScroll: true });
+    if (this.ctx.input.inputMethod === 'keyboard') this.ctx.input.requestPointerLock();
   }
 
   /** Fire-and-forget audio; the audio subsystem may not exist yet. */
@@ -352,10 +426,6 @@ export class UiSystem {
     this.sfx('grenade_warn', 0.6);
   }
 
-  setMatch(m) {
-    Object.assign(this.state, m);
-  }
-
   setHudVisible(v) {
     this.hudTarget = v ? 1 : 0;
   }
@@ -404,18 +474,40 @@ export class UiSystem {
     this._lastRaw = t.raw;
     const s = this.state;
     s.time = t.elapsed;
+    const input = ctx.input;
+    this.touchControls?.update();
+    s.controllerLabels = input.inputMethod === 'gamepad' ? input.gamepad.labels : null;
+    const action = this.resultWon ? 'NEXT WAVE' : 'RETRY WAVE';
+    setText(this.resultButton, s.controllerLabels ? `${s.controllerLabels.confirm} · ${action}` : action);
 
     // ---- pause -----------------------------------------------------------
-    if (ctx.input.enabled && !ctx.input.frozen) {
-      if (ctx.input.actionPressed('pause')) this.menu.toggle();
+    if (ctx.input.enabled && !ctx.input.frozen && !this.resultActive) {
+      if (input.controllerDisconnected || input.focusLost) this.menu.show();
+      else if (input.actionPressed('pause')) this.menu.toggle();
+      else if (this.menu.open && (input.gamepad.pressed('confirm') || input.gamepad.pressed('cancel'))) this.menu.close();
       // Losing pointer lock mid-match is the same intent as pressing Escape.
       if (ctx.input.pointerLocked) this._hadPointerLock = true;
-      else if (this._hadPointerLock && !this.menu.open) {
+      else if (this._hadPointerLock) {
         this._hadPointerLock = false;
-        this.menu.show();
+        if (!this.menu.open) this.menu.show();
       }
     }
+    input.focusLost = false;
     this.menu.update(rawDt);
+
+    // Give the player an unobstructed view of the first-person body fall, then
+    // resolve into the KIA treatment. This is integrated here instead of a CSS
+    // transition so pause and deterministic captures see the same frame state.
+    if (this.resultActive) {
+      this.resultReveal += rawDt;
+      const reveal = clamp01((this.resultReveal - 0.85) / 0.4);
+      setStyle(this.resultScreen, 'opacity', reveal.toFixed(3));
+      if (reveal === 1 && this.resultButton.disabled) {
+        this.resultButton.disabled = false;
+        this.resultButton.focus({ preventScroll: true });
+      }
+      if (reveal === 1 && input.gamepad.pressed('confirm')) this._restartWave();
+    }
 
     // ---- external state --------------------------------------------------
     // `simulate` means a scripted debug timeline owns the HUD numbers; letting
@@ -432,7 +524,8 @@ export class UiSystem {
       if (ws.ads !== undefined) s.ads = !!ws.ads;
       if (ws.spread !== undefined) s.baseSpread = 4 + ws.spread * 40;
       if (ws.lethalCount !== undefined) s.lethalCount = ws.lethalCount;
-      if (ws.tacticalCount !== undefined) s.tacticalCount = ws.tacticalCount;
+      if (ws.weaponIndex !== undefined) s.weaponIndex = ws.weaponIndex;
+      if (ws.weaponCount !== undefined) s.weaponCount = ws.weaponCount;
     }
 
     const ps = s.simulate ? null : this._playerState();
@@ -481,6 +574,8 @@ export class UiSystem {
 
     // ---- ai blips --------------------------------------------------------
     this._collectBlips();
+    s.wave = ctx.get('waves').number;
+    s.remaining = ctx.get('ai').stats.alive;
 
     // ---- camera basis ----------------------------------------------------
     const m = ctx.camera.matrixWorld.elements;
@@ -548,7 +643,7 @@ export class UiSystem {
   _collectBlips() {
     if (this.demo?.active) return; // demo drives its own contacts
     const ai = this.ctx.peek('ai');
-    const list = typeof ai?.getHudActors === 'function' ? ai.getHudActors() : ai?.actors ?? null;
+    const list = typeof ai?.getHudActors === 'function' ? ai.getHudActors() : ai?.agents ?? null;
     if (!Array.isArray(list)) return;
     let n = 0;
     for (let i = 0; i < list.length && n < MAX_BLIPS; i++) {
@@ -592,6 +687,7 @@ export class UiSystem {
   }
 
   dispose() {
+    this.touchControls?.dispose();
     for (const off of this._unsubs) off();
     this._unsubs.length = 0;
     this.crosshair.dispose();

@@ -26,7 +26,7 @@
 
 import {
   ad, biquad, clamp, gain, hit, lerp, osc, saturationCurve, semis, series, shaper,
-  struckResonator, sweep,
+  struckResonator, sweep, NoiseBank,
 } from './dsp.js';
 
 /**
@@ -99,6 +99,86 @@ export function resolveProfile(name) {
   if (/snip|dmr|awp|barrett|338|intervention|marksman/.test(k)) return WEAPON_PROFILES.sniper;
   if (/lmg|mg4|m249|pkm|saw|minigun/.test(k)) return WEAPON_PROFILES.lmg;
   return WEAPON_PROFILES.rifle;
+}
+
+/** Bounded procedural samples: same synthesis, paid once during loading. */
+export class ShotBank {
+  constructor() {
+    this.buffers = new Map();
+    this.bytes = 0;
+    this.disposed = false;
+  }
+
+  async prepare(rng) {
+    const rate = 48000, variants = 4;
+    for (const original of Object.values(WEAPON_PROFILES)) {
+      // Bound by the longest detuned distant tail, not six silent seconds for
+      // every pistol/SMG shot. This also bounds offline startup CPU and memory.
+      const spacing = Math.max(1, original.tailDecay * 1.18 * 1.07 * 2.6 * 1.3 + 0.1);
+      // One offline render per profile keeps peak scratch memory bounded.
+      const ctx = new OfflineAudioContext(2, rate * spacing * variants * 2, rate);
+      const noise = new NoiseBank(ctx, rng.fork(), 2.4);
+      const profile = { ...original, _rr: undefined };
+      const clips = [];
+      for (let i = 0; i < variants * 2; i++) {
+        const when = i * spacing;
+        const voice = weaponShot(ctx, noise, rng, profile, {
+          when, distance: i < variants ? 0 : 60, firstPerson: i < variants,
+        });
+        if (voice.end - when >= spacing) throw new Error('Audio shot exceeds its offline render slot');
+        voice.node.connect(ctx.destination);
+        clips.push({ start: when * rate, length: Math.ceil((voice.end - when) * rate) });
+      }
+      const rendered = await ctx.startRendering();
+      if (this.disposed) return;
+      const buffers = clips.map(({ start, length }) => {
+        const buffer = ctx.createBuffer(2, length, rate);
+        for (let ch = 0; ch < 2; ch++) buffer.copyToChannel(rendered.getChannelData(ch).subarray(start, start + length), ch);
+        this.bytes += length * 2 * Float32Array.BYTES_PER_ELEMENT;
+        return buffer;
+      });
+      this.buffers.set(original, { buffers, cursor: 0 });
+      noise.dispose();
+      // Let loading progress paint between profiles, including on mobile.
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+
+  play(ctx, rng, profile, opts) {
+    const entry = this.buffers.get(profile);
+    if (!entry) throw new Error('Procedural weapon audio was not prepared');
+    const slot = entry.cursor++ % 4;
+    const far = clamp((opts.distance ?? 0) / 42, 0, 1);
+    const rate = rng.range(0.98, 1.02);
+    const node = gain(ctx, rng.range(0.95, 1.05));
+    const sources = [], gains = [];
+    let end = opts.when;
+    for (let side = 0; side < 2; side++) {
+      const level = side === 0 ? 1 - far : far;
+      if (level <= 0.001) continue;
+      const source = ctx.createBufferSource();
+      source.buffer = entry.buffers[slot + side * 4];
+      source.playbackRate.value = rate;
+      const mix = gain(ctx, level);
+      source.connect(mix); mix.connect(node);
+      source.start(opts.when);
+      end = Math.max(end, opts.when + source.buffer.duration / rate);
+      sources.push(source); gains.push(mix);
+    }
+    let stopped = false;
+    return {
+      node, end, send: profile.send * (1 + far * 1.4) * (opts.echoBoost ?? 1),
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        for (const source of sources) { source.stop(); source.disconnect(); }
+        for (const mix of gains) mix.disconnect();
+        node.disconnect();
+      },
+    };
+  }
+
+  dispose() { this.disposed = true; this.buffers.clear(); this.bytes = 0; }
 }
 
 /* ------------------------------------------------------------------ */

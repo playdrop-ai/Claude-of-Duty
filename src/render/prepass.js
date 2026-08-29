@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { COMMON } from './glsl.js';
+import { cutoutUniforms, updateCutout, CUTOUT_PARS, CUTOUT_TEST } from './cutout.js';
 
 /**
  * Depth / normal / velocity prepass.
@@ -48,6 +49,7 @@ export class GBuffer {
         owPrevVP: { value: new THREE.Matrix4() },
         owMatId: { value: 0 },
         owCoverage: { value: 1 },
+        ...cutoutUniforms(),
       },
       vertexShader: /* glsl */ `
         #include <common>
@@ -63,8 +65,10 @@ export class GBuffer {
         varying vec4 vCurrClip;
         varying vec4 vPrevClip;
         varying float vViewDepth;
+        varying vec2 vAlphaUv;
 
         void main() {
+          vAlphaUv = uv;
           #include <batching_vertex>
           #include <beginnormal_vertex>
           #include <morphinstance_vertex>
@@ -96,6 +100,7 @@ export class GBuffer {
         ${COMMON}
         uniform float owMatId;
         uniform float owCoverage;
+        ${CUTOUT_PARS}
 
         varying vec3 vNrm;
         varying vec4 vCurrClip;
@@ -107,6 +112,7 @@ export class GBuffer {
         layout(location = 2) out vec4 gDepth;
 
         void main() {
+          ${CUTOUT_TEST}
           vec3 n = normalize( vNrm );
           if ( !gl_FrontFacing ) n = -n;
           gNormal = vec4( owEncodeNormal( n ), owCoverage, owMatId );
@@ -120,8 +126,14 @@ export class GBuffer {
       `,
     });
 
-    this.material.onBeforeRender = (renderer, scene, camera, geometry, object) => {
+    this.material.onBeforeRender = (renderer, scene, camera, geometry, object, group) => {
       const u = this.material.uniforms;
+      const source = Array.isArray(object.material) ? object.material[group.materialIndex] : object.material;
+      updateCutout(u, source);
+      if (this.material.side !== source.side) {
+        this.material.side = source.side;
+        this.material.needsUpdate = true;
+      }
       const p = this.prev.get(object.id);
       if (p !== undefined) u.owPrevModelMatrix.value.copy(p);
       else u.owPrevModelMatrix.value.copy(object.matrixWorld);
@@ -157,6 +169,9 @@ export class GBuffer {
       generateMipmaps: false,
     });
     rt.textures[0].name = 'gb-normal';
+    // Keep native depth for the forward pass's early depth test. The linear
+    // depth colour attachment below remains the input to screen-space effects.
+    rt.depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType);
 
     rt.textures[1].format = THREE.RGFormat;
     rt.textures[1].type = THREE.HalfFloatType;

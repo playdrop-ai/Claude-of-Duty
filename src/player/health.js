@@ -64,8 +64,12 @@ export class Health {
   reset(full = true) {
     if (full) this.value = this.max;
     this.dead = false;
+    this.regenerating = false;
     this.suppression = 0;
     this.hitFlash = 0;
+    this.effect = 0;
+    this.beatPhase = 0;
+    this.pulse = 0;
     this.lastDamageTime = -100;
     for (let k = 0; k < this.indicators.length; k++) this.indicators[k].active = false;
   }
@@ -125,6 +129,7 @@ export class Health {
 
     if (this.value <= 0) {
       this.dead = true;
+      this.rig?.beginDeath?.(Math.sin(angle) < 0 ? -1 : 1);
       this.ctx.events.emit('player:death', { position: this.ctx.camera.position });
       // (one allocation on death is fine — it happens once)
     }

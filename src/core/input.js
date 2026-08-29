@@ -1,5 +1,8 @@
+import { GamepadInput } from './gamepad.js';
+import { TouchInput } from './touch.js';
+
 /**
- * Input aggregation: keyboard, mouse (pointer-locked), and gamepad, exposed as
+ * Input aggregation: keyboard, mouse (pointer-locked), gamepad and touch, exposed as
  * a stable per-frame snapshot so gameplay never touches raw DOM events.
  *
  * Edge queries (`pressed`, `released`) are valid only during the frame in which
@@ -20,7 +23,9 @@ export const ACTIONS = {
   melee: ['KeyV'],
   leanLeft: ['KeyQ'],
   leanRight: ['KeyE'],
-  swapWeapon: ['Digit1', 'Digit2', 'Tab'],
+  swapWeapon: ['Tab'],
+  cycleFireMode: ['KeyB'],
+  inspect: ['KeyI'],
   grenade: ['KeyG'],
   flashlight: ['KeyT'],
   pause: ['Escape'],
@@ -48,8 +53,18 @@ export class Input {
     /** Set true by capture mode so scripted shots aren't fought by real input. */
     this.frozen = false;
 
-    this.gamepadIndex = null;
-    this.stick = { moveX: 0, moveY: 0, lookX: 0, lookY: 0 };
+    this.gamepad = new GamepadInput();
+    this.touch = new TouchInput();
+    this.stick = this.gamepad.stick;
+    this.inputMethod = 'keyboard';
+    this._lastPointerType = 'mouse';
+    this.hostPaused = false;
+    this.orientationPaused = false;
+    this.focusLost = false;
+    this.controllerDisconnected = false;
+    this._controllerAvailability = null; // null means standalone, without an SDK host.
+    this._controllerUnsubscribe = null;
+    this._gamepadAccessBlocked = false;
 
     this._bound = {
       keydown: this._onKeyDown.bind(this),
@@ -60,6 +75,11 @@ export class Input {
       wheel: this._onWheel.bind(this),
       lockchange: this._onLockChange.bind(this),
       blur: this._onBlur.bind(this),
+      visibility: () => { if (document.hidden) this._onBlur(); },
+      pointerdown: (e) => {
+        this._lastPointerType = e.pointerType;
+        if (e.pointerType === 'touch') this.inputMethod = 'touch';
+      },
       contextmenu: (e) => e.preventDefault(),
     };
   }
@@ -72,6 +92,8 @@ export class Input {
     addEventListener('mousemove', this._bound.mousemove);
     addEventListener('wheel', this._bound.wheel, { passive: true });
     addEventListener('blur', this._bound.blur);
+    addEventListener('pointerdown', this._bound.pointerdown, true);
+    document.addEventListener('visibilitychange', this._bound.visibility);
     document.addEventListener('pointerlockchange', this._bound.lockchange);
     this.canvas.addEventListener('contextmenu', this._bound.contextmenu);
   }
@@ -84,8 +106,19 @@ export class Input {
     removeEventListener('mousemove', this._bound.mousemove);
     removeEventListener('wheel', this._bound.wheel);
     removeEventListener('blur', this._bound.blur);
+    removeEventListener('pointerdown', this._bound.pointerdown, true);
+    document.removeEventListener('visibilitychange', this._bound.visibility);
     document.removeEventListener('pointerlockchange', this._bound.lockchange);
     this.canvas.removeEventListener('contextmenu', this._bound.contextmenu);
+    this._controllerUnsubscribe?.();
+  }
+
+  bindPlayDropDevice(device) {
+    this._controllerUnsubscribe?.();
+    this._controllerAvailability = device.controllerAvailability;
+    this._controllerUnsubscribe = device.onControllerChange(({ availability }) => {
+      this._controllerAvailability = availability;
+    });
   }
 
   requestPointerLock() {
@@ -104,6 +137,10 @@ export class Input {
   _onKeyDown(e) {
     if (!this.enabled) return;
     if (e.repeat) return;
+    this.inputMethod = 'keyboard';
+    // Dialog buttons keep native Enter/Space/Tab behavior. None of those keys
+    // may also enter the movement/weapon queue when the dialog closes.
+    if (e.code !== 'Escape' && e.target?.closest?.('button, input, textarea, select, a[href], [contenteditable="true"]')) return;
     // Let devtools/refresh through; swallow everything else the game binds.
     if (!e.metaKey && !e.ctrlKey) e.preventDefault();
     this._pendingDown.add(e.code);
@@ -116,12 +153,18 @@ export class Input {
 
   _onMouseDown(e) {
     if (!this.enabled) return;
+    if (this._lastPointerType === 'touch' || e.sourceCapabilities?.firesTouchEvents || e.target?.closest?.('[data-touch-ui]')) return;
+    this.inputMethod = 'keyboard';
+    // UI clicks must reach their button before it requests pointer lock.
+    // Locking on Resume's mouse-down retargets mouse-up and cancels its click.
+    if (e.target !== this.canvas) return;
     if (!this.pointerLocked && e.button === 0) this.requestPointerLock();
     this._pendingDown.add(`Mouse${e.button}`);
   }
 
   _onMouseUp(e) {
     if (!this.enabled) return;
+    if (this._lastPointerType === 'touch' || e.sourceCapabilities?.firesTouchEvents || e.target?.closest?.('[data-touch-ui]')) return;
     this._pendingUp.add(`Mouse${e.button}`);
   }
 
@@ -130,23 +173,36 @@ export class Input {
     // movementX/Y is already relative and unaffected by cursor clamping.
     this._rawLook.x += e.movementX ?? 0;
     this._rawLook.y += e.movementY ?? 0;
+    if (e.movementX || e.movementY) this.inputMethod = 'keyboard';
   }
 
   _onWheel(e) {
     if (!this.enabled) return;
+    this.inputMethod = 'keyboard';
     this._pendingWheel += Math.sign(e.deltaY);
   }
 
   _onLockChange() {
     this.pointerLocked = document.pointerLockElement === this.canvas;
-    if (!this.pointerLocked) this._onBlur();
+    if (!this.pointerLocked) this.reset();
   }
 
   /** Losing focus must release every held key, or the player runs forever. */
   _onBlur() {
-    for (const code of this.down) this._pendingUp.add(code);
-    this._rawLook.x = 0;
-    this._rawLook.y = 0;
+    this.focusLost = true;
+    this.reset();
+  }
+
+  reset() {
+    this.down.clear();
+    this._pressed.clear();
+    this._released.clear();
+    this._pendingDown.clear();
+    this._pendingUp.clear();
+    this.look.x = this.look.y = this._rawLook.x = this._rawLook.y = 0;
+    this.wheel = this._pendingWheel = 0;
+    this.gamepad.reset();
+    this.touch.reset();
   }
 
   beginFrame() {
@@ -166,8 +222,9 @@ export class Input {
     this._pendingUp.clear();
 
     const s = this.config.sensitivity;
-    this.look.x = this.frozen ? 0 : this._rawLook.x * s;
-    this.look.y = this.frozen ? 0 : this._rawLook.y * s * (this.config.invertY ? -1 : 1);
+    this.touch.beginFrame(this.enabled && !this.frozen && !this.hostPaused && !this.orientationPaused && !document.hidden);
+    this.look.x = this.frozen ? 0 : this._rawLook.x * s + this.touch.look.x;
+    this.look.y = this.frozen ? 0 : (this._rawLook.y * s + this.touch.look.y) * (this.config.invertY ? -1 : 1);
     this._rawLook.x = 0;
     this._rawLook.y = 0;
 
@@ -180,32 +237,39 @@ export class Input {
   endFrame() {}
 
   _pollGamepad() {
-    const pads = navigator.getGamepads?.() ?? [];
-    const pad = pads[this.gamepadIndex ?? 0] ?? pads.find(Boolean);
-    if (!pad) {
-      this.stick.moveX = this.stick.moveY = this.stick.lookX = this.stick.lookY = 0;
-      return;
+    let pads = [];
+    const allowed = this._controllerAvailability === null || this._controllerAvailability === 'ready';
+    // The host owns iframe focus/overlays. Standalone play must be the focused tab.
+    const focused = this._controllerAvailability !== null || document.hasFocus();
+    if (allowed && focused && !document.hidden && this.enabled && !this.frozen && !this.hostPaused && !this.orientationPaused && !this._gamepadAccessBlocked) {
+      try {
+        pads = Array.from(navigator.getGamepads?.() ?? []);
+      } catch (error) {
+        if (error.name !== 'SecurityError') throw error;
+        this._gamepadAccessBlocked = true;
+        console.warn('[input] Controller access is blocked by the browser permissions policy.');
+      }
     }
-    const dz = (v) => (Math.abs(v) < 0.16 ? 0 : (v - Math.sign(v) * 0.16) / 0.84);
-    this.stick.moveX = dz(pad.axes[0] ?? 0);
-    this.stick.moveY = dz(pad.axes[1] ?? 0);
-    // Cubic response curve on the look stick — fine aim near centre, fast flicks at the edge.
-    const curve = (v) => Math.sign(v) * Math.abs(v) ** 2.4;
-    this.stick.lookX = curve(dz(pad.axes[2] ?? 0));
-    this.stick.lookY = curve(dz(pad.axes[3] ?? 0));
+    this.gamepad.update(pads);
+    this.controllerDisconnected = this.gamepad.disconnected && this.inputMethod === 'gamepad';
+    if (!allowed || this._gamepadAccessBlocked) this.gamepad.status = this._gamepadAccessBlocked ? 'blocked' : this._controllerAvailability;
+    if (this.gamepad.active) this.inputMethod = 'gamepad';
+    else if (this.controllerDisconnected) this.inputMethod = 'keyboard';
   }
 
   /** True while any key bound to `action` is held. */
   action(name) {
-    const codes = ACTIONS[name];
-    if (!codes) return false;
+    if (this.touch.held(name)) return true;
+    if (this.gamepad.held(name)) return true;
+    const codes = ACTIONS[name] ?? [];
     for (const c of codes) if (this.down.has(c)) return true;
     return false;
   }
 
   actionPressed(name) {
-    const codes = ACTIONS[name];
-    if (!codes) return false;
+    if (this.touch.pressed(name)) return true;
+    if (this.gamepad.pressed(name)) return true;
+    const codes = ACTIONS[name] ?? [];
     for (const c of codes) if (this._pressed.has(c)) return true;
     return false;
   }
@@ -223,15 +287,15 @@ export class Input {
   }
 
   get fire() {
-    return this.down.has('Mouse0');
+    return this.down.has('Mouse0') || this.gamepad.held('fire') || this.touch.held('fire');
   }
 
   get firePressed() {
-    return this._pressed.has('Mouse0');
+    return this._pressed.has('Mouse0') || this.gamepad.pressed('fire') || this.touch.pressed('fire');
   }
 
   get ads() {
-    return this.down.has('Mouse2');
+    return this.down.has('Mouse2') || this.gamepad.held('ads') || this.touch.held('ads');
   }
 
   /** Normalised WASD + left-stick movement, clamped to the unit disc so
@@ -241,6 +305,8 @@ export class Input {
     let y = (this.action('forward') ? 1 : 0) - (this.action('back') ? 1 : 0);
     x += this.stick.moveX;
     y -= this.stick.moveY;
+    x += this.touch.move.x;
+    y += this.touch.move.y;
     const len = Math.hypot(x, y);
     if (len > 1) {
       x /= len;

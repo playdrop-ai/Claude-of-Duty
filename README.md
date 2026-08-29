@@ -1,5 +1,19 @@
 # Claude of Duty
 
+## PlayDrop hosting fork
+
+This repository is a PlayDrop-maintained fork of [Matt Shumer's original Claude of Duty](https://github.com/mshumer/Claude-of-Duty), based on upstream commit [`d9b237b`](https://github.com/mshumer/Claude-of-Duty/commit/d9b237b75c9304ab8d9ef4cfa0c3568c7c11a853). Matt created the original game and procedural art. This fork adapts it for PlayDrop with a store listing, catalogue metadata, and a few focused hosting and gameplay tweaks.
+
+[Play Claude of Duty on PlayDrop](https://www.playdrop.ai/@mattshumer_/claude_of_duty). You can also [make your own games on PlayDrop](https://playdrop.ai/create).
+
+### What this fork adds
+
+- PlayDrop listing assets and catalogue metadata.
+- Hosted loading, start, and pause behavior.
+- Gamepad and landscape touch controls.
+- Desktop and mobile rendering budgets.
+- Wave progression plus focused combat and destruction fixes.
+
 Get updates [here](https://shumer.dev/newsletter).
 
 A first-person shooter built in the browser with Three.js r180 and WebGL2. Roughly
@@ -7,15 +21,80 @@ A first-person shooter built in the browser with Three.js r180 and WebGL2. Rough
 
 **There are no art assets.** Every texture, mesh, animation and sound is generated
 procedurally at load time from code. No models, no HDRIs, no image files, no audio
-files. The only runtime dependency is `three`.
+files. Rendering uses `three`; standalone touch controls also bundle NippleJS 0.10.2.
 
 ```bash
-npm install
+npm ci
 npm run dev          # http://127.0.0.1:5173
 ```
 
 Click the canvas to lock the cursor. WASD move, mouse aim, LMB fire, RMB ADS,
 R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
+
+### Controller support in this fork
+
+Standard browser-mapped Xbox and PlayStation controllers work alongside keyboard/mouse.
+Left stick moves; right stick aims. RT/R2 fires, LT/L2 aims down sights, X/Square reloads,
+Y/Triangle cycles weapons, RB/R1 quick-throws a grenade, and B/Circle toggles crouch.
+Hold L3 to sprint. D-pad down toggles prone, D-pad left/right leans, LB/L1 changes
+fire mode, and R3 inspects the weapon. A/Cross starts, jumps, resumes, and confirms wave results;
+Menu/Options pauses or resumes. Disconnecting the active controller pauses play.
+The compact HUD switches between keyboard and controller hints automatically.
+
+Hosted input respects `sdk.device.controllerAvailability` and `onControllerChange`,
+plus the host pause lifecycle. Live axes/buttons use `navigator.getGamepads()`;
+the SDK's NippleJS library is for touchscreen joysticks, not physical controllers.
+Standalone play uses the same mapping without loading the SDK. Browser autoplay
+rules may require one page click to enable audio.
+
+Weapon sounds are generated into a bounded sample bank during loading instead of
+rebuilding synthesis graphs on every shot. Directional HRTF, distance filtering
+and environmental reverb remain. A single live AudioContext is unlocked by a
+gesture and suspended while muted, paused or backgrounded; wave resets stop old
+combat voices. These paths are tested in desktop Chromium and WebKit, not yet
+on physical iPhone hardware.
+
+### Mobile touch controls
+
+Phones and tablets use landscape touch controls. Touch anywhere on the empty left
+half to place a movement stick; drag to move, push past its ring to sprint, and
+release to hide it. Swipe the right half to look. The weapon fires automatically
+when the crosshair and barrel have a clear line to a living enemy. This pulls the
+normal trigger: ammunition, recoil, spread, and travelling bullets are unchanged;
+there is no automatic camera aiming. Keyboard and gamepad still fire manually.
+
+Tap one of the three bottom weapon slots to equip it; tap the current weapon or
+its ammunition to reload. Empty weapons also reload automatically. Aim toggles
+the sights. Aim, Grenade, Jump, and Crouch sit in a staggered right-thumb arc.
+Tap Crouch, or hold it to toggle prone.
+Pause, Retry Wave and Next Wave work without pointer lock. Turning to portrait pauses
+play and asks the player to rotate; resume explicitly after returning to landscape.
+
+Hosted play loads `sdk.libs.nipplejs.load()`. Standalone play imports the matching
+NippleJS 0.10.2 dependency without loading or contacting PlayDrop. Touch state is
+cleared on pause, death, backgrounding, cancellation, and input-mode changes.
+
+### Waves and restoration
+
+Clear the six enemies in wave one, then choose **Next Wave**. Each wave adds one
+enemy until twelve are active; later waves add 10% enemy health per wave, capped
+at twice normal health. Accuracy and perception do not gain hidden advantages.
+Death offers **Retry Wave**, restarting that entire wave, not just the player.
+Both paths restore the original spawn and facing, full health, every magazine and
+reserve, two grenades, terrain, and a fresh enemy squad. Old projectiles, debris,
+impact marks and combat audio effects are cleared.
+
+Bullets and explosions break selected crate stacks and market stalls, opening
+their collision space and updating enemy navigation/cover. Desktop adds a bounded
+pool of temporary physics splinters; touch devices keep the same destruction
+without those extra bodies. Cars and buildings remain solid. Bullet marks persist
+on surviving surfaces until the decal pool recycles them or a new round begins.
+
+Phones and tablets automatically use the mobile rendering profile: a 600K internal
+pixel budget, two 1024px shadow cascades, and reduced expensive screen-space effects.
+The HUD and touch targets remain at display resolution. `?q=ultra` explicitly
+selects the desktop profile; `?q=mobile` can compare the mobile profile on desktop.
+Mobile emulation is not proof of physical-device Safari/Chrome performance.
 
 ## What's in it
 
@@ -75,9 +154,13 @@ Measured on an Apple silicon laptop at 1512×982, DPR 2 (3.34 MP internal), `ult
 | shader compiles during play | 34–35 | **0** |
 | boot | ~9–12 s | **3.7–4.6 s** |
 
-The optimization pass was constrained to produce **zero visual change**, enforced by
-`imagediff.mjs` rather than by assertion — the shipped build is bit-identical to its
-pre-optimization reference across all 11 shots.
+That upstream optimization pass was constrained to produce **zero visual change**, enforced by
+`imagediff.mjs` rather than by assertion. The later PlayDrop hosting pass keeps the
+full-resolution presentation and HUD while bounding the internal 3D pixel workload
+on oversized displays. At a 3117 x 1753 presentation size it improves the measured
+median from 11 FPS to 54 to 55 FPS across three final runs. See
+[`assets/marketing/playdrop/PERFORMANCE-ANALYSIS.md`](assets/marketing/playdrop/PERFORMANCE-ANALYSIS.md)
+for the exact profile and visual validation.
 
 Shader pre-warm (`src/core/prewarm.js`) is what removed the stalls. Making it
 *provably* pixel-neutral required first fixing subsystems that animated off

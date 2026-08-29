@@ -144,16 +144,27 @@ export class NavGrid {
     return ix >= 0 && iz >= 0 && ix < this.nx && iz < this.nz;
   }
 
-  /** Sample the physics world. ~2 rays per cell; logged so the cost is visible. */
-  build() {
+  cellBounds(bounds, padding = 0) {
+    return bounds ? [
+      Math.max(0, this.cellX(bounds.min.x - padding)), Math.min(this.nx - 1, this.cellX(bounds.max.x + padding)),
+      Math.max(0, this.cellZ(bounds.min.z - padding)), Math.min(this.nz - 1, this.cellZ(bounds.max.z + padding)),
+    ] : [0, this.nx - 1, 0, this.nz - 1];
+  }
+
+  /** Resample only changed props during combat, or the whole grid at boot. */
+  build(bounds = null) {
     const t0 = performance.now();
     const phys = this.physics;
     const MASK = phys.MASK.WORLD;
     const r = this.radius;
-    let walk = 0;
-    for (let iz = 0; iz < this.nz; iz++) {
-      for (let ix = 0; ix < this.nx; ix++) {
+    const [x0, x1, z0, z1] = this.cellBounds(bounds, this.radius + this.cell);
+    let walk = this.walkableCount;
+    for (let iz = z0; iz <= z1; iz++) {
+      for (let ix = x0; ix <= x1; ix++) {
         const i = this.index(ix, iz);
+        if (this.flags[i]) walk--;
+        this.flags[i] = this.enclosure[i] = 0;
+        this.floor[i] = -Infinity;
         const x = this.worldX(ix), z = this.worldZ(iz);
         const down = phys.raycast(x, this.topY, z, 0, -1, 0, this.topY + 30, MASK);
         if (!down.hit) continue;
@@ -389,9 +400,13 @@ export class CoverMap {
     const MASK = phys.MASK.WORLD;
     const step = opts.step ?? 1; // sample every Nth cell
     const reach = opts.reach ?? 1.25;
-    this.points.length = 0;
-    for (let iz = 1; iz < g.nz - 1; iz += step) {
-      for (let ix = 1; ix < g.nx - 1; ix += step) {
+    const [x0, x1, z0, z1] = g.cellBounds(opts.bounds, reach + g.radius + g.cell);
+    this.points = this.points.filter(p => {
+      const x = g.cellX(p.x), z = g.cellZ(p.z);
+      return x < x0 || x > x1 || z < z0 || z > z1;
+    });
+    for (let iz = Math.max(1, z0); iz <= Math.min(g.nz - 2, z1); iz += step) {
+      for (let ix = Math.max(1, x0); ix <= Math.min(g.nx - 2, x1); ix += step) {
         if (!g.walkable(ix, iz)) continue;
         const i = g.index(ix, iz);
         if (g.enclosure[i] === 0) {
@@ -498,6 +513,7 @@ export class CoverMap {
     for (const s of [1, -1, 0]) {
       const px = cover.x + lx * 0.62 * s;
       const pz = cover.z + lz * 0.62 * s;
+      if (!this.grid.lineOfWalk(cover, { x: px, y: cover.y, z: pz })) continue;
       from.set(px, cover.y + eyeH, pz);
       if (phys.lineOfSight(from, to, phys.MASK.SIGHT)) {
         out.set(px, cover.y, pz);
@@ -505,6 +521,6 @@ export class CoverMap {
       }
     }
     out.set(cover.x, cover.y, cover.z);
-    return 0;
+    return null;
   }
 }

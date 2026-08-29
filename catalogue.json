@@ -1,0 +1,142 @@
+{
+  "apps": [
+    {
+      "name": "claude_of_duty",
+      "version": "1.0.0",
+      "visibility": "PUBLIC",
+      "displayName": "Claude of Duty",
+      "subtitle": "The Original Gauntlet Loop FPS",
+      "description": "Hold a market street against waves of AI soldiers. Crates and stalls break under fire, and every sight and sound is generated from code. Play with keyboard, gamepad, or touch.",
+      "type": "GAME",
+      "username": "mattshumer_",
+      "authMode": "NONE",
+      "controllerMode": "SUPPORTED",
+      "previewable": false,
+      "editorSupported": false,
+      "license": "MIT",
+      "emoji": "🔫",
+      "color": "#CDA873",
+      "file": "dist/index.html",
+      "surfaceTargets": {
+        "desktop": true,
+        "mobileLandscape": true,
+        "mobilePortrait": false
+      },
+      "primarySurface": "DESKTOP",
+      "listing": {
+        "icon": "assets/marketing/playdrop/icon.png",
+        "heroPortrait": "assets/marketing/playdrop/hero/hero-portrait.png",
+        "heroLandscape": "assets/marketing/playdrop/hero/hero-landscape.png",
+        "screenshotsLandscape": [
+          {
+            "path": "assets/marketing/playdrop/screenshots/landscape/01-enter-the-firefight.png",
+            "slug": "enter-the-firefight",
+            "title": "Enter the Firefight",
+            "alt": "Promotional composite of a first-person rifle firing at an AI soldier in Claude of Duty's procedurally generated market street.",
+            "caption": "Move through a crowded market street, pick your targets, and fire back."
+          },
+          {
+            "path": "assets/marketing/playdrop/screenshots/landscape/02-outthink-the-enemy.png",
+            "slug": "outthink-the-enemy",
+            "title": "Outthink the Enemy",
+            "alt": "Promotional composite of the player aiming down sights while two AI soldiers hold cover in Claude of Duty's market street.",
+            "caption": "Watch how the enemy moves, keep cover between you, and pick your angle before they close in."
+          },
+          {
+            "path": "assets/marketing/playdrop/screenshots/landscape/03-generated-in-code.png",
+            "slug": "generated-in-code",
+            "title": "Generated in Code",
+            "alt": "Promotional composite of Claude of Duty's market street transforming from procedural wireframe geometry into the fully rendered scene.",
+            "caption": "No art files anywhere: every mesh, material, effect, animation, and sound is generated in code."
+          },
+          {
+            "path": "assets/marketing/playdrop/screenshots/landscape/04-the-gauntlet-original.png",
+            "slug": "the-gauntlet-original",
+            "title": "The Gauntlet Original",
+            "alt": "Promotional composite of a Claude of Duty firefight framed by abstract blueprint sketches and review marks.",
+            "caption": "The original Gauntlet Loop browser FPS, built by a fleet of AI agents from one detailed human prompt."
+          }
+        ],
+        "videosLandscape": [
+          {
+            "path": "assets/marketing/playdrop/video/creator-store-gameplay.mp4",
+            "slug": "creator-store-gameplay",
+            "title": "Claude of Duty Gameplay Trailer",
+            "caption": "Step into the market, aim down sights, and take down two AI soldiers.",
+            "description": "A 12.1-second cut of Matt Shumer's original gameplay footage, with real movement, aiming, firing, and AI combat in the procedural market, including two enemies taken down."
+          }
+        ]
+      },
+      "playtestTapes": {
+        "MOBILE_LANDSCAPE": {
+          "version": 1,
+          "primaryVerb": "drag",
+          "durationMs": 25000,
+          "startOnlyEventCount": 1,
+          "successSignals": [
+            { "kind": "VISIBLE_PROGRESS", "description": "The floating joystick advances the camera through the market; right-side swipes turn the view and tapping the middle weapon slot equips the MPX-9." }
+          ],
+          "events": [
+            { "type": "tap", "atMs": 15000, "x": 0.5, "y": 0.5, "durationMs": 80 },
+            { "type": "pointerDown", "atMs": 17000, "x": 0.12, "y": 0.70 },
+            { "type": "pointerMove", "atMs": 17400, "x": 0.12, "y": 0.54 },
+            { "type": "pointerUp", "atMs": 19000, "x": 0.12, "y": 0.54 },
+            { "type": "pointerDown", "atMs": 19500, "x": 0.60, "y": 0.45 },
+            { "type": "pointerMove", "atMs": 20000, "x": 0.76, "y": 0.45 },
+            { "type": "pointerUp", "atMs": 20200, "x": 0.76, "y": 0.45 },
+            { "type": "tap", "atMs": 21000, "x": 0.50, "y": 0.84, "durationMs": 80 }
+          ]
+        },
+        "DESKTOP": {
+          "version": 1,
+          "primaryVerb": "key",
+          "durationMs": 30000,
+          "startOnlyEventCount": 1,
+          "successSignals": [
+            {
+              "kind": "VISIBLE_PROGRESS",
+              "description": "The first-person camera moves through the market while the player sprints, aims, and fires into the active combat scene."
+            }
+          ],
+          "events": [
+            { "type": "tap", "atMs": 15000, "x": 0.5, "y": 0.5, "durationMs": 80 },
+            { "type": "keyDown", "atMs": 17000, "key": "KeyW" },
+            { "type": "keyDown", "atMs": 17500, "key": "ShiftLeft" },
+            { "type": "keyUp", "atMs": 20000, "key": "ShiftLeft" },
+            { "type": "keyUp", "atMs": 22000, "key": "KeyW" },
+            { "type": "tap", "atMs": 23500, "x": 0.54, "y": 0.5, "durationMs": 160 },
+            { "type": "keyDown", "atMs": 25000, "key": "KeyD" },
+            { "type": "keyUp", "atMs": 28500, "key": "KeyD" }
+          ]
+        }
+      },
+      "players": {
+        "solo": true
+      },
+      "makingOf": "Claude of Duty began as Matt Shumer's zero-shot Gauntlet Loop experiment. He wrote one detailed seed prompt, then let a fleet of Claude Opus 5 builders and memory-isolated critics work for many hours: the builders made the game while the critics compared independent captures against demanding references and fed what they found into the next round. Follow the story through Matt's [launch and original gameplay](https://x.com/mattshumer_/status/2081054356405731740), [prompt and source post](https://x.com/mattshumer_/status/2081205493154840855), [wording correction](https://x.com/mattshumer_/status/2081430817985663053), [Gauntlet Loop guide](https://somethingbig.ai/gauntlet-loop?ref=playdrop), [website](https://shumer.dev/), [original repository](https://github.com/mshumer/Claude-of-Duty), and [PlayDrop hosting fork](https://github.com/playdrop-ai/Claude-of-Duty). This PlayDrop-maintained adaptation keeps Matt's original procedural art and combat foundation, and adds hosting and loading integration, controller and mobile touch controls, rendering budgets, combat corrections, breakable market props, and escalating waves with a full retry and restock loop. Those additions belong to this fork, not to Matt's original release.",
+      "controls": "**Keyboard and mouse:** Click anywhere to start. Move with **WASD** and aim with the **mouse**. **Left click** fires, **right click** aims down sights, **R** reloads, **1/2/3** picks a weapon, and **G** quick-throws a grenade. **Shift** sprints, **Space** jumps, **Ctrl/C** toggles crouch, **Z** toggles prone, and **Q/E** leans. **B** changes fire mode and **I** inspects your weapon. **Esc** pauses; click **Resume** to jump back in. If you go down, **Retry Wave** restarts the whole round fresh. Once every enemy is down, choose **Next Wave** for a tougher squad and a full restock. **Command+Shift+D** toggles performance diagnostics.\n\n**Standard gamepad (Xbox / PlayStation):** Move with the **left stick** and aim with the **right stick**. **A / Cross** starts, jumps, resumes, and confirms **Retry Wave** or **Next Wave**. **RT / R2** fires, **LT / L2** aims down sights, **X / Square** reloads, **Y / Triangle** cycles weapons, **RB / R1** quick-throws a grenade, and **B / Circle** toggles crouch. Hold **L3** to sprint. **D-pad down** toggles prone, **D-pad left/right** leans, **LB / L1** changes fire mode, and **R3** inspects your weapon. **Menu / Options** pauses or resumes, and **A / Cross** or **B / Circle** also resumes. An empty weapon reloads on its own while you still have reserve ammo. The on-screen hints match whichever input you're using, and the game pauses itself if your controller disconnects.\n\n**Mobile touch (landscape):** Tap anywhere to start. Touch the empty **left half** of the screen to place a floating movement stick: drag to move, push past its ring to sprint, and let go to hide it. **Swipe the right half** to look around. Your weapon **auto-fires** at living enemies under the crosshair whenever the barrel is also clear, and ammo, recoil, spread, and travelling bullets all still apply. **Tap a weapon slot** to equip it, or **tap your current weapon or ammo** to reload. **Aim** toggles the sights, and Aim, Grenade, Jump, and Crouch sit in a staggered arc under your right thumb. Tap **Crouch**, or hold it to toggle prone. Tap **Pause**, **Resume**, or **Retry Wave** / **Next Wave** whenever you need them. Turning to portrait pauses the game and asks you to rotate back. Leaning, fire-mode switching, and weapon inspection stay on keyboard and gamepad.",
+      "creation": {
+        "harness": "Claude Code (Gauntlet Loop)",
+        "model": "Claude Opus 5"
+      },
+      "sourceRepository": "https://github.com/mshumer/Claude-of-Duty",
+      "design": {
+        "genre": "game-genre/fps",
+        "coreGameplay": "core-gameplay/shoot",
+        "perspective": "perspective/3d-first-person",
+        "controls": "game-controls/keyboard",
+        "visualStyle": "visual-style/realistic",
+        "feel": "game-feel/tense"
+      },
+      "tags": [
+        "game-genre/action",
+        "game-genre/shooter",
+        "interaction-mode/solo",
+        "interaction-mode/real-time",
+        "tone/cinematic",
+        "tone/gritty"
+      ],
+      "releaseNotes": "First PlayDrop release: escalating waves, a full retry and restock loop, touch and controller support, breakable market props, fairer enemy perception, lasting bullet marks, and desktop and mobile rendering profiles."
+    }
+  ]
+}

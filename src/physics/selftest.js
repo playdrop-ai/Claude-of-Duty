@@ -446,6 +446,55 @@ section('Ragdolls');
   phys.removeRagdoll(rd);
 }
 
+// Thin solids must not push from their far face. Include a rotated wall and
+// a capsule crossing its near plane between steps, not just a flat floor.
+for (const [name, rotation, x, speed, z] of [
+  ['thin floor', new THREE.Euler(0, 0, Math.PI / 2), 0.04, 0, 0.3],
+  ['rotated wall', new THREE.Euler(0.2, 0.6, 0.4), 0.04, -10, 0.3],
+  ['wall edge', new THREE.Euler(0.2, 0.6, 0.4), 0.04, 0, 2.08],
+  ['opposite face', new THREE.Euler(0.2, 0.6, 0.4), -0.09, 0, 0.3],
+]) {
+  const p = new PhysicsSystem();
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(0.05, 4, 4));
+  slab.geometry.translate(-0.025, 0, 0);
+  slab.rotation.copy(rotation); slab.updateMatrixWorld(true);
+  p.addStatic(slab, 'concrete'); p.rebuildStatic();
+  const point = y => new THREE.Vector3(x, y, z).applyQuaternion(slab.quaternion).toArray();
+  const rd = p.createRagdoll({ gravity: 0, iterations: 8, bones: [
+    { name: 'limb', head: point(-0.3), tail: point(0.3), radius: 0.2, mass: 1, parent: -1 },
+  ] });
+  const velocity = new THREE.Vector3(speed, 0, 0).applyQuaternion(slab.quaternion);
+  rd.setVelocity(velocity.x, velocity.y, velocity.z);
+  for (let i = 0; i < 30; i++) rd.step(1 / 120);
+  const center = new THREE.Vector3((rd.px[0] + rd.px[1]) / 2,
+    (rd.py[0] + rd.py[1]) / 2, (rd.pz[0] + rd.pz[1]) / 2).applyQuaternion(slab.quaternion.clone().invert());
+  ok(x > 0 ? center.x >= 0 : center.x <= -0.05, `${name}: stays on the contacted side`);
+  p.dispose(); slab.geometry.dispose(); slab.material.dispose();
+}
+
+{
+  const p = new PhysicsSystem();
+  const group = new THREE.Group(), bones = Array.from({ length: 5 }, () => new THREE.Bone());
+  group.position.set(0, 2, 0); group.rotation.set(0.1, 0.7, -0.2); group.scale.setScalar(0.92);
+  group.add(bones[0]); bones[0].add(bones[1], bones[2]);
+  bones[1].position.set(-0.12, 0, 0); bones[2].position.set(0.12, 0, 0);
+  bones[1].add(bones[3]); bones[2].add(bones[4]);
+  bones[3].position.set(0, -0.5, 0); bones[4].position.set(0, -0.5, 0);
+  bones[3].rotation.x = 0.4; bones[4].rotation.z = -0.2;
+  group.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(bones);
+  const original = bones.map(b => ({ position: b.position.clone(), scale: b.scale.clone(), world: b.matrixWorld.clone() }));
+  const rd = p.createRagdollFromSkeleton({ skeleton }, { gravity: 0 });
+  rd.writeToSkeleton(); group.updateMatrixWorld(true);
+  ok(bones.every((b, i) => b.matrixWorld.elements.every((v, j) => Math.abs(v - original[i].world.elements[j]) < 1e-8)),
+    'skeleton handoff preserves the live pose and bone roll');
+  rd.setVelocity(0.5, 0, 1);
+  for (let i = 0; i < 120; i++) { rd.step(1 / 120); rd.writeToSkeleton(); }
+  ok(bones.slice(1).every((b, i) => b.position.equals(original[i + 1].position)) &&
+    bones.every((b, i) => b.scale.equals(original[i].scale)), 'ragdoll rotates joints without stretching their offsets or scale');
+  p.dispose(); skeleton.dispose();
+}
+
 /* ---------------- dynamic colliders ---------------- */
 section('Hitbox colliders');
 {

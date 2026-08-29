@@ -41,8 +41,8 @@
  * AIM
  *   p.adsRequested            true while the aim button is held
  *   p.adsProgress             0..1 blend actually in use
- *   p.setAdsProgress(v)       `weapons` owns the real curve — push it here and
- *                             the camera FOV, sway and move speed follow it
+ *   p.setWeaponHandling(v, def)  `weapons` owns the ADS curve and handling;
+ *                                camera FOV and move speed follow the active def
  *
  * CAMERA FEEL (for `weapons`, `fx`, `ai`)
  *   p.addRecoil(pitch, yaw, roll, punch)   camera-owned recoil impulse (radians)
@@ -188,6 +188,7 @@ export class PlayerSystem {
     on('damage:dealt', (e) => this._onDamageDealt(e));
     on('explosion', (e) => this._onExplosion(e));
     on('bullet:impact', (e) => this._onBulletImpact(e));
+    on('player:death', () => this.setControlEnabled(false));
 
     console.info(
       `[player] spawn ${spawn.feet.x.toFixed(1)}, ${spawn.feet.y.toFixed(2)}, ` +
@@ -241,7 +242,7 @@ export class PlayerSystem {
     if (stick.lookX || stick.lookY) {
       const rate = 3.1 * sens; // rad/s at full deflection
       dYaw -= stick.lookX * rate * dt;
-      dPitch -= stick.lookY * rate * dt;
+      dPitch -= stick.lookY * rate * dt * (cfg.invertY ? -1 : 1);
     }
     // Mantles are rooted: you keep your head, but the shoulders are committed.
     if (m.mantleMotion.active) {
@@ -282,7 +283,7 @@ export class PlayerSystem {
     this.health.update(dt);
 
     this.rig.update(dt, this.movement, this.health);
-    if (this.controlEnabled) this.rig.applyTo(ctx.camera);
+    if (this.controlEnabled || this.health.dead) this.rig.applyTo(ctx.camera);
     else this.rig.forward.set(0, 0, -1).applyQuaternion(ctx.camera.quaternion);
 
     this.lowHealthPass?.sync(this.health);
@@ -590,6 +591,19 @@ export class PlayerSystem {
     this.movement.adsAmount = this.adsAmount;
   }
 
+  setWeaponHandling(v, def) {
+    if (!def) throw new Error('Active weapon definition is required for player handling');
+    this.setAdsProgress(v);
+    this.movement.adsFovScale = def.adsFov;
+    this.movement.weaponMoveScale = def.moveScale;
+    this.movement.weaponSprintScale = def.sprintScale;
+    this.movement.weaponAdsMoveScale = def.adsMoveScale;
+  }
+
+  blockSprint(seconds) {
+    this.movement.blockSprint(seconds);
+  }
+
   addRecoil(pitch, yaw, roll, punch) {
     this.rig.addRecoil(pitch, yaw, roll, punch);
   }
@@ -614,11 +628,13 @@ export class PlayerSystem {
     this.health.addSuppression(a);
   }
 
-  setControlEnabled(on) {
+  setControlEnabled(on, { preserveMotion = false } = {}) {
     this.controlEnabled = !!on;
     this.movement.controlEnabled = this.controlEnabled;
     if (!on) {
       this.movement.latchInput(-2); // flush held keys
+      // Pausing freezes time; killing/cutting away still cancels live movement.
+      if (preserveMotion) return;
       this.movement.velocity.set(0, 0, 0);
       this.movement.sprinting = false;
       this.movement.tacticalSprint = false;
@@ -657,14 +673,25 @@ export class PlayerSystem {
   respawn(index = 0) {
     const world = this.ctx.peek('world');
     const sp = world?.spawn?.(index);
+    if (!sp?.position) throw new Error(`Cannot restart wave: player spawn ${index} is missing`);
     this.health.reset(true);
-    if (!sp?.position) return;
     const gy = this.physics.groundHeight(sp.position.x, sp.position.z, sp.position.y + 6);
     const feetY = Number.isFinite(gy) ? gy + 0.03 : sp.position.y;
     this.movement.yaw = sp.yaw ?? 0;
     this.movement.pitch = 0;
     this.movement.teleport(sp.position.x, feetY, sp.position.z);
     this.rig.reset(STANCE.stand.eye);
+    this.adsAmount = 0;
+    this.adsRequested = false;
+    this._adsExternal = false;
+    this.movement.adsAmount = 0;
+    this._prev.state = '';
+    this.rig.fov = this.ctx.config.fov;
+    this.rig.update(0, this.movement, this.health);
+    this.rig.applyTo(this.ctx.camera);
+    this._syncHitbox();
+    this.setControlEnabled(true);
+    this.ctx.events.emit('player:respawn', { index, position: this.movement.position });
   }
 
   /** Named states for dev overlays and future shots. */
@@ -733,6 +760,9 @@ export class PlayerSystem {
       lean: m.leanAmount,
       fov: this.rig.fov,
       health: this.health.value,
+      dead: this.health.dead,
+      deathProgress: this.rig.deathT,
+      yaw: this.movement.yaw,
       suppression: this.health.suppression,
     };
   }

@@ -2,6 +2,16 @@ import { el, svg, setText, setStyle, setClass, clamp01, damp, ease } from './uti
 
 const MAX_PIPS = 30;
 
+function fragIcon(parent) {
+  const s = svg('svg', { viewBox: '0 0 16 20', fill: 'rgba(255,255,255,.92)' }, parent);
+  svg('path', { d: 'M6.4 0h3.2v2.1h1.5l1.1 2H3.8l1.1-2h1.5z' }, s);
+  svg('path', { d: 'M8 4.6c3.1 0 5.6 2.9 5.6 7.1S11.1 20 8 20 2.4 15.9 2.4 11.7 4.9 4.6 8 4.6z' }, s);
+  const g = svg('g', { stroke: 'rgba(0,0,0,.5)', 'stroke-width': 0.9 }, s);
+  for (const y of [9.5, 13, 16.2]) svg('line', { x1: 3, y1: y, x2: 13, y2: y }, g);
+  svg('line', { x1: 8, y1: 5, x2: 8, y2: 19.6 }, g);
+  return s;
+}
+
 /** Tracking / size steps the weapon name falls back through when it overflows. */
 const NAME_FIT = [
   ['.22em', 'calc(12.5px * var(--k))'],
@@ -10,39 +20,14 @@ const NAME_FIT = [
   ['.06em', 'calc(9.5px * var(--k))'],
 ];
 
-function fragIcon(parent) {
-  const s = svg('svg', { viewBox: '0 0 16 20', fill: 'rgba(255,255,255,.92)' }, parent);
-  svg('path', { d: 'M6.4 0h3.2v2.1h1.5l1.1 2H3.8l1.1-2h1.5z' }, s);
-  svg(
-    'path',
-    {
-      d:
-        'M8 4.6c3.1 0 5.6 2.9 5.6 7.1S11.1 20 8 20 2.4 15.9 2.4 11.7 4.9 4.6 8 4.6z',
-    },
-    s
-  );
-  const g = svg('g', { stroke: 'rgba(0,0,0,.5)', 'stroke-width': 0.9 }, s);
-  for (const y of [9.5, 13, 16.2]) svg('line', { x1: 3, y1: y, x2: 13, y2: y }, g);
-  svg('line', { x1: 8, y1: 5, x2: 8, y2: 19.6 }, g);
-  return s;
-}
-
-function flashIcon(parent) {
-  const s = svg('svg', { viewBox: '0 0 16 20', fill: 'rgba(255,255,255,.92)' }, parent);
-  svg('path', { d: 'M6.2 0h3.6v2.4H6.2z' }, s);
-  svg('path', { d: 'M4.2 3.1h7.6c.5 0 .9.4.9.9v13.4c0 1.4-1.1 2.6-2.6 2.6H5.9c-1.4 0-2.6-1.2-2.6-2.6V4c0-.5.4-.9.9-.9z' }, s);
-  svg('rect', { x: 4.6, y: 6.2, width: 6.8, height: 1.2, fill: 'rgba(0,0,0,.45)' }, s);
-  svg('rect', { x: 4.6, y: 9.1, width: 6.8, height: 1.2, fill: 'rgba(0,0,0,.45)' }, s);
-  return s;
-}
-
 /**
  * Ammo / weapon readout, bottom right.
  *
- *              ▲ 2   ✦ 1     equipment — its OWN row
- *   [AUTO]        M4A1
+ *                  [G]       grenade quick throw
+ *               ●   2
  *              28 / 210
  *   ▮▮▮▮▮▮▮▮▮▮▯▯▯▯▯▯▯        magazine state, one pip per round
+ *   M4A1        [1][2][3]      weapon selection
  *
  * Layout contract: the panel is a single column of fixed width pinned to the
  * right margin (`--ammo-w` in style.js) and every row is an explicit grid with
@@ -50,8 +35,8 @@ function flashIcon(parent) {
  * into another. The equipment counts used to be an absolutely positioned strip
  * that happened to land on the head row and collided with it.
  *
- * Deliberately understated: three ink levels, no boxes, no icons bigger than
- * the type. The only colour is the low-ammo amber and the empty-mag red.
+ * Deliberately understated: three ink levels, one compact equipment icon, and
+ * no decorative boxes. Colour is reserved for low ammo and an empty magazine.
  */
 export class AmmoPanel {
   constructor(parent) {
@@ -60,14 +45,9 @@ export class AmmoPanel {
     this.equip = el('div', 'ow-equip', this.root);
     this.slotL = el('div', 'ow-slot', this.equip);
     fragIcon(this.slotL);
-    this.slotLn = el('span', null, this.slotL, '2');
-    this.slotT = el('div', 'ow-slot', this.equip);
-    flashIcon(this.slotT);
-    this.slotTn = el('span', null, this.slotT, '1');
-
-    const head = el('div', 'ow-ammo-head', this.root);
-    this.mode = el('div', 'ow-ammo-mode', head, 'AUTO');
-    this.name = el('div', 'ow-ammo-name', head, 'M4A1');
+    this.slotMeta = el('div', 'ow-slot-meta', this.slotL);
+    this.grenadeKey = el('kbd', 'ow-keycap', this.slotMeta, 'G');
+    this.slotLn = el('span', 'ow-slot-count', this.slotMeta, '2');
 
     const row = el('div', 'ow-ammo-row', this.root);
     this.cur = el('div', 'ow-ammo-cur', row, '30');
@@ -83,6 +63,14 @@ export class AmmoPanel {
     this.reloadFill = el('i', null, bar);
     this.reloadBar = bar;
 
+    const head = el('div', 'ow-ammo-head', this.root);
+    this.name = el('div', 'ow-ammo-name', head, 'M4A1');
+    this.weaponKeys = el('div', 'ow-weapon-keys', head);
+    this.keySlots = ['1', '2', '3'].map((key) => el('span', 'ow-keycap', this.weaponKeys, key));
+    this.controllerKey = el('span', 'ow-keycap', this.weaponKeys);
+    this.controllerKey.title = 'Next weapon';
+    setStyle(this.controllerKey, 'display', 'none');
+
     this.punch = 0;
     this._lastAmmo = -1;
     this._lastPips = -1;
@@ -95,7 +83,7 @@ export class AmmoPanel {
 
   /**
    * @param {object} s { name, mode, ammo, reserve, magSize, reloading,
-   *                     reloadProgress, lethal, lethalCount, tacticalCount }
+   *                     reloadProgress, lethalCount, weaponIndex, weaponCount }
    */
   update(dt, s) {
     const ammo = Math.max(0, s.ammo | 0);
@@ -108,7 +96,6 @@ export class AmmoPanel {
     }
     setText(this.res, Math.max(0, s.reserve | 0));
     this._fitName(String(s.weaponName ?? s.name ?? 'M4A1'));
-    setText(this.mode, s.fireMode ?? 'AUTO');
 
     this.punch = Math.max(0, this.punch - dt * 6.5);
     const p = 1 - 0.075 * ease.outQuad(this.punch);
@@ -155,10 +142,11 @@ export class AmmoPanel {
     }
 
     // --- reload state -----------------------------------------------------
-    setStyle(this.reload, 'display', reloading || (ammo === 0 && !reloading) ? '' : 'none');
-    setText(this.reload, reloading ? 'RELOADING' : 'PRESS R TO RELOAD');
-    if (!reloading && ammo === 0) {
-      // pulse the prompt so an empty gun is impossible to miss
+    const outOfAmmo = ammo === 0 && Math.max(0, s.reserve | 0) === 0;
+    setStyle(this.reload, 'display', reloading || outOfAmmo ? '' : 'none');
+    setText(this.reload, reloading ? 'RELOADING' : 'OUT OF AMMO');
+    if (outOfAmmo) {
+      // Pulse the terminal state so an unusable weapon is impossible to miss.
       const pulse = 0.55 + 0.45 * Math.abs(Math.sin((s.time ?? 0) * 3.8));
       setStyle(this.reload, 'opacity', pulse.toFixed(3));
     } else {
@@ -169,11 +157,19 @@ export class AmmoPanel {
 
     // --- equipment --------------------------------------------------------
     const lc = s.lethalCount ?? 0;
-    const tc = s.tacticalCount ?? 0;
     setText(this.slotLn, lc);
-    setText(this.slotTn, tc);
     setClass(this.slotL, 'empty', lc <= 0);
-    setClass(this.slotT, 'empty', tc <= 0);
+    const weaponIndex = Math.max(0, s.weaponIndex | 0);
+    const weaponCount = Math.max(0, s.weaponCount | 0);
+    const labels = s.controllerLabels;
+    setText(this.grenadeKey, labels ? labels.grenade : 'G');
+    setText(this.controllerKey, labels ? labels.swapWeapon : '');
+    setStyle(this.controllerKey, 'display', labels ? '' : 'none');
+    for (let i = 0; i < this.keySlots.length; i++) {
+      setStyle(this.keySlots[i], 'display', labels ? 'none' : '');
+      setClass(this.keySlots[i], 'active', i === weaponIndex);
+      setClass(this.keySlots[i], 'unavailable', i >= weaponCount);
+    }
   }
 
   /**

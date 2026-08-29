@@ -94,6 +94,13 @@ export class LightPool {
     }
   }
 
+  reset() {
+    for (const entry of this.lights) {
+      entry.age = entry.duration;
+      entry.peak = entry.light.intensity = 0;
+    }
+  }
+
   dispose() {
     for (const e of this.lights) {
       e.light.parent?.remove(e.light);

@@ -1,5 +1,5 @@
 import { Engine } from './core/engine.js';
-import { createConfig } from './core/config.js';
+import { createConfig, selectQuality, selectRuntimeProfile } from './core/config.js';
 
 import { RenderSystem } from './render/index.js';
 import { MaterialSystem } from './materials/index.js';
@@ -12,26 +12,54 @@ import { FxSystem } from './fx/index.js';
 import { AiSystem } from './ai/index.js';
 import { UiSystem } from './ui/index.js';
 import { AudioSystem } from './audio/index.js';
+import { WaveSystem } from './waves.js';
 
 import { installShotApi } from './dev/shots.js';
+import { installPerfDebug } from './dev/perf-debug.js';
 import { prewarm } from './core/prewarm.js';
 
 const params = new URLSearchParams(location.search);
 const capture = params.get('capture') === '1';
-// Deterministic shutter for the pixel gate: the engine does not schedule its own
-// frames, the driver advances exactly N of them through window.__PUMP__. Opt-in,
-// because tools that measure real frame pacing (tools/perf.mjs) need the loop to
-// free-run. See the long comment in src/dev/shots.js.
+// Lockstep captures pump exact frame counts; live profiles use the normal loop.
 const lockstep = capture && params.get('lockstep') === '1';
+const mobile = navigator.maxTouchPoints > 0;
 
 const config = createConfig({
-  quality: params.get('q') ?? 'ultra',
+  ...selectRuntimeProfile(mobile),
+  mobile,
+  quality: selectQuality(params.get('q'), mobile),
   deterministic: capture,
 });
+const captureRenderScale = capture && params.has('renderScale')
+  ? Number(params.get('renderScale'))
+  : null;
+if (captureRenderScale !== null) {
+  if (!Number.isFinite(captureRenderScale) || captureRenderScale <= 0 || captureRenderScale > 1) {
+    throw new Error(`capture renderScale must be greater than 0 and at most 1, received ${params.get('renderScale')}`);
+  }
+  config.q.renderScale = captureRenderScale;
+}
 
 const canvas = document.getElementById('game');
 
 const engine = new Engine({ canvas, config });
+window.__ENGINE__ = engine;
+engine.input.orientationPaused = window.__PLAYDROP_PORTRAIT__ === true;
+const boot = window.__PLAYDROP_BOOT__;
+const bootStage = {
+  render: 'Initializing renderer',
+  materials: 'Generating tactical materials',
+  sky: 'Baking procedural sky',
+  physics: 'Building collision world',
+  world: 'Assembling combat environment',
+  player: 'Preparing player controls',
+  weapons: 'Building weapon systems',
+  fx: 'Preparing tactical effects',
+  ai: 'Deploying AI soldiers',
+  ui: 'Loading mission interface',
+  audio: 'Preparing procedural audio',
+  waves: 'Preparing wave objectives',
+};
 
 // Registration order is irrelevant — Registry topo-sorts on static deps.
 engine
@@ -44,68 +72,107 @@ engine
   .add(WeaponSystem)
   .add(FxSystem)
   .add(AiSystem)
+  .add(WaveSystem)
   .add(UiSystem)
   .add(AudioSystem);
 
-try {
-  await engine.init();
-} catch (err) {
-  console.error('[boot] init failed', err);
-  document.body.insertAdjacentHTML(
-    'beforeend',
-    `<pre style="position:fixed;inset:0;padding:2rem;color:#f66;background:#000;
-       font:12px/1.5 ui-monospace,monospace;overflow:auto;z-index:9999;white-space:pre-wrap">
-BOOT FAILURE\n\n${err.stack ?? err.message}</pre>`
-  );
-  throw err;
-}
+performance.mark('boot:engine-init:start');
+await engine.init({
+  onProgress: ({ id, completed, total }) => {
+    boot.report(bootStage[id] ?? `Preparing ${id}`, 8 + (completed / total) * 64);
+  },
+});
+window.__PLAYDROP_SYNC_ORIENTATION__?.();
+performance.mark('boot:engine-init:end');
+performance.measure('boot:engine-init', 'boot:engine-init:start', 'boot:engine-init:end');
 
 const shotApi = installShotApi(engine, { capture, lockstep });
+const perfDebug = installPerfDebug(engine);
+window.advanceTime = (ms) => shotApi.pump(Math.max(1, Math.round(ms / (1000 / 60))));
+window.render_game_to_text = () => {
+  const playerSystem = engine.ctx.peek('player');
+  const player = playerSystem?.stats;
+  const ai = engine.ctx.peek('ai')?.stats;
+  const weapons = engine.ctx.peek('weapons')?.getHudState?.();
+  const paused = engine.ctx.peek('ui')?.menu?.open === true;
+  const waves = engine.ctx.get('waves');
+  return JSON.stringify({
+    coordinateSystem: 'Three.js world coordinates; +Y is up and the camera faces its local -Z axis.',
+    mode: engine.error ? 'error' : window.__PLAYDROP_STARTED__ ? (waves.status === 'won' ? 'victory' : player?.dead ? 'gameover' : paused || !engine._running ? 'paused' : 'playing') : 'start',
+    wave: { number: waves.number, status: waves.status, seconds: Number(waves.elapsed.toFixed(1)), ...waves.rules },
+    error: engine.error?.message ?? null,
+    frame: engine.time.frame,
+    player: player ? {
+      state: player.state,
+      stance: player.stance,
+      speed: Number(player.speed.toFixed(3)),
+      verticalSpeed: Number(player.vertical.toFixed(3)),
+      grounded: player.grounded,
+      health: Number(player.health.toFixed(1)),
+      dead: player.dead,
+      deathProgress: Number((player.deathProgress ?? 0).toFixed(3)),
+      yaw: Number(player.yaw.toFixed(3)),
+      aiming: playerSystem.adsAmount > 0.5,
+    } : null,
+    enemies: {
+      alive: ai?.alive ?? 0,
+      total: ai?.agents ?? 0,
+      minimapBlips: engine.ctx.peek('ui')?._blipCount ?? 0,
+      openingGrenade: ai?.openingGrenade ?? null,
+      openingGrenadeShooterDistance: ai?.openingGrenadeShooterDistance ?? null,
+      openingGrenadeTargetDistance: ai?.openingGrenadeTargetDistance ?? null,
+      openingGrenadeLandingDistance: ai?.openingGrenadeLandingDistance ?? null,
+      openingGrenadeTargetError: ai?.openingGrenadeTargetError ?? null,
+      openingGrenadePlayerHealth: ai?.openingGrenadePlayerHealth ?? null,
+      openingGrenadePlayerDamage: ai?.openingGrenadePlayerDamage ?? null,
+      friendlyFireBlocked: ai?.friendlyFireBlocked ?? 0,
+    },
+    weapon: weapons ? {
+      name: weapons.name,
+      index: weapons.weaponIndex,
+      count: weapons.weaponCount,
+      grenades: weapons.lethalCount,
+      ammo: weapons.ammo,
+      reserve: weapons.reserve,
+    } : null,
+    pointerLocked: engine.input.pointerLocked,
+    inputMethod: engine.input.inputMethod,
+    controller: { status: engine.input.gamepad.status, connected: engine.input.gamepad.connected },
+    touchControls: engine.ctx.peek('ui')?.touchControls?.visible === true,
+    performanceDebug: perfDebug.enabled,
+  });
+};
 
-// Compile every shader permutation before the frame loop starts. Measured: without
-// this, 86 programs compile lazily during play, up to 30 on one frame, producing
-// 3.1-3.9 SECOND stalls. See src/core/prewarm.js.
-//
-// ON BY DEFAULT since the capture path was made frame-deterministic; opt out with
-// `?prewarm=0`. It is now PROVEN pixel-neutral: `tools/baseline.mjs` with
-// `--query=prewarm=0` vs `--query=prewarm=1` reports identical:true on all 11
-// shots (0 changed pixels, maxDelta 0). The two things that previously made the
-// ~1.4 s pre-warm spend look like a visual change were both boot-duration
-// couplings OUTSIDE the subsystems: (1) the shutter frame index was latency-bound
-// because the engine kept stepping through the driver's round trips — fixed by
-// lockstep in src/dev/shots.js; (2) `will-change: transform` on the compass strip
-// cached a composited-layer raster taken at a wall-clock-dependent moment — fixed
-// in src/ui/style.js.
-const warmup = params.get('prewarm') === '0' ? { ok: false, reason: 'disabled by ?prewarm=0' } : await prewarm(engine);
+// Compile gameplay shaders while loading to avoid first-use stalls. The capture
+// harness can opt out to compare pixels; prewarm preserves scene/time/RNG state.
+performance.mark('boot:shader-prewarm:start');
+boot?.report('Compiling shader programs', 72);
+const warmup = params.get('prewarm') === '0'
+  ? { ok: false, reason: 'disabled by ?prewarm=0' }
+  : await prewarm(engine, {
+      onProgress: (value) => boot?.report('Compiling shader programs', 72 + value * 25),
+    });
+performance.mark('boot:shader-prewarm:end');
+performance.measure('boot:shader-prewarm', 'boot:shader-prewarm:start', 'boot:shader-prewarm:end');
 console.info('[boot] prewarm', warmup);
 window.__PREWARM__ = warmup;
 
+boot.report('Rendering first combat frame', 99);
 engine.start();
 
-// Capture harness handshake: only flag ready once a frame has actually landed.
-//
-// BOOT_FRAMES is deliberately a frame COUNT, not a rAF race. In lockstep mode the
-// engine has no loop of its own, so we hand-pump exactly this many frames and only
-// then raise __READY__; the shot is therefore always applied at engine frame 3, no
-// matter how long boot (or pre-warm) took in wall-clock terms.
+// The module resolves after the same three-frame handshake in both modes.
 const BOOT_FRAMES = 3;
 if (lockstep) {
   await shotApi.pump(BOOT_FRAMES);
-  window.__READY__ = true;
 } else {
-  let warm = 0;
-  const readyProbe = () => {
-    if (++warm >= BOOT_FRAMES) {
-      window.__READY__ = true;
-      return;
-    }
-    requestAnimationFrame(readyProbe);
-  };
-  requestAnimationFrame(readyProbe);
+  for (let frame = 0; frame < BOOT_FRAMES; frame++) await boot.nextFrame();
 }
-
-window.__ENGINE__ = engine;
+if (engine.error) throw engine.error;
+window.__READY__ = true;
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => engine.dispose());
+  import.meta.hot.dispose(() => {
+    perfDebug.dispose();
+    engine.dispose();
+  });
 }

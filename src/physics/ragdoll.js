@@ -2,18 +2,14 @@
  * Ragdolls — an articulated chain of capsules solved with position-based
  * dynamics (Gauss-Seidel, a handful of iterations per fixed step).
  *
- * Why PBD rather than an impulse-based articulation: with 15 bones, unilateral
- * world contacts and 120 Hz steps, a projected-Gauss-Seidel position solver is
- * unconditionally stable — bones cannot gain energy, so bodies *settle* instead
- * of buzzing or exploding, which is the entire brief. Each bone is a segment of
- * two particles; joints are shared particles, so joint separation is impossible
- * by construction and only the *angular* limits need constraints.
+ * Bones are particle segments with shared endpoints and distance links at
+ * branch attachments. Physics supplies the root position and bone rotations;
+ * the adopted skeleton keeps its own joint offsets, scale and mesh weights.
  *
  * Constraints, applied in order every iteration:
- *   1. bone length      (hard distance, stiffness 1)
- *   2. cone limit       (swing of a bone relative to its parent)
- *   3. twist limit      (roll of a bone's reference frame, damped)
- *   4. world contact    (capsule vs static BVH + Coulomb friction)
+ *   1. bone length and branching attachment distances
+ *   2. swing limits relative to the handed-over pose
+ *   3. world contact (capsule vs static BVH + friction)
  *
  * `ai` hands over a dead actor with createRagdoll()/adoptSkeleton() and we own
  * the bone transforms from that moment on.
@@ -37,7 +33,7 @@ export function humanoidSpec(height = 1.8, scaleMass = 82) {
   const h = height;
   const M = scaleMass;
   const y = (f) => h * f;
-  const b = (name, hx, hy, hz, tx, ty, tz, r, m, parent, cone, twist) => ({
+  const b = (name, hx, hy, hz, tx, ty, tz, r, m, parent, cone) => ({
     name,
     head: [hx, hy, hz],
     tail: [tx, ty, tz],
@@ -45,26 +41,25 @@ export function humanoidSpec(height = 1.8, scaleMass = 82) {
     mass: m * M,
     parent,
     cone: cone * DEG,
-    twist: twist * DEG,
   });
   const sh = h * 0.105; // half shoulder width
   const hip = h * 0.055;
   return [
-    /* 0 */ b('pelvis', 0, y(0.53), 0, 0, y(0.63), 0, 0.085, 0.14, -1, 0, 0),
-    /* 1 */ b('spine', 0, y(0.63), 0, 0, y(0.74), 0, 0.082, 0.12, 0, 22, 18),
-    /* 2 */ b('chest', 0, y(0.74), 0, 0, y(0.83), 0, 0.088, 0.19, 1, 20, 15),
-    /* 3 */ b('neck', 0, y(0.83), 0, 0, y(0.875), 0, 0.042, 0.02, 2, 30, 25),
-    /* 4 */ b('head', 0, y(0.875), 0, 0, y(0.97), 0.01, 0.062, 0.07, 3, 42, 30),
-    /* 5 */ b('upperArmL', -sh, y(0.815), 0, -sh - h * 0.015, y(0.65), 0, 0.045, 0.027, 2, 85, 60),
-    /* 6 */ b('forearmL', -sh - h * 0.015, y(0.65), 0, -sh - h * 0.02, y(0.50), 0, 0.037, 0.018, 5, 80, 45),
-    /* 7 */ b('handL', -sh - h * 0.02, y(0.50), 0, -sh - h * 0.02, y(0.44), 0, 0.032, 0.006, 6, 55, 40),
-    /* 8 */ b('upperArmR', sh, y(0.815), 0, sh + h * 0.015, y(0.65), 0, 0.045, 0.027, 2, 85, 60),
-    /* 9 */ b('forearmR', sh + h * 0.015, y(0.65), 0, sh + h * 0.02, y(0.50), 0, 0.037, 0.018, 8, 80, 45),
-    /*10 */ b('handR', sh + h * 0.02, y(0.50), 0, sh + h * 0.02, y(0.44), 0, 0.032, 0.006, 9, 55, 40),
-    /*11 */ b('thighL', -hip, y(0.53), 0, -hip * 1.05, y(0.29), 0, 0.062, 0.10, 0, 75, 35),
-    /*12 */ b('shinL', -hip * 1.05, y(0.29), 0, -hip * 1.05, y(0.055), 0, 0.048, 0.045, 11, 70, 20),
-    /*13 */ b('thighR', hip, y(0.53), 0, hip * 1.05, y(0.29), 0, 0.062, 0.10, 0, 75, 35),
-    /*14 */ b('shinR', hip * 1.05, y(0.29), 0, hip * 1.05, y(0.055), 0, 0.048, 0.045, 13, 70, 20),
+    /* 0 */ b('pelvis', 0, y(0.53), 0, 0, y(0.63), 0, 0.085, 0.14, -1, 0),
+    /* 1 */ b('spine', 0, y(0.63), 0, 0, y(0.74), 0, 0.082, 0.12, 0, 22),
+    /* 2 */ b('chest', 0, y(0.74), 0, 0, y(0.83), 0, 0.088, 0.19, 1, 20),
+    /* 3 */ b('neck', 0, y(0.83), 0, 0, y(0.875), 0, 0.042, 0.02, 2, 30),
+    /* 4 */ b('head', 0, y(0.875), 0, 0, y(0.97), 0.01, 0.062, 0.07, 3, 42),
+    /* 5 */ b('upperArmL', -sh, y(0.815), 0, -sh - h * 0.015, y(0.65), 0, 0.045, 0.027, 2, 85),
+    /* 6 */ b('forearmL', -sh - h * 0.015, y(0.65), 0, -sh - h * 0.02, y(0.50), 0, 0.037, 0.018, 5, 80),
+    /* 7 */ b('handL', -sh - h * 0.02, y(0.50), 0, -sh - h * 0.02, y(0.44), 0, 0.032, 0.006, 6, 55),
+    /* 8 */ b('upperArmR', sh, y(0.815), 0, sh + h * 0.015, y(0.65), 0, 0.045, 0.027, 2, 85),
+    /* 9 */ b('forearmR', sh + h * 0.015, y(0.65), 0, sh + h * 0.02, y(0.50), 0, 0.037, 0.018, 8, 80),
+    /*10 */ b('handR', sh + h * 0.02, y(0.50), 0, sh + h * 0.02, y(0.44), 0, 0.032, 0.006, 9, 55),
+    /*11 */ b('thighL', -hip, y(0.53), 0, -hip * 1.05, y(0.29), 0, 0.062, 0.10, 0, 75),
+    /*12 */ b('shinL', -hip * 1.05, y(0.29), 0, -hip * 1.05, y(0.055), 0, 0.048, 0.045, 11, 70),
+    /*13 */ b('thighR', hip, y(0.53), 0, hip * 1.05, y(0.29), 0, 0.062, 0.10, 0, 75),
+    /*14 */ b('shinR', hip * 1.05, y(0.29), 0, hip * 1.05, y(0.055), 0, 0.048, 0.045, 13, 70),
   ];
 }
 
@@ -132,8 +127,7 @@ export class Ragdoll {
     this.boneMass = new Float32Array(nb);
     this.boneParent = new Int32Array(nb);
     this.boneCone = new Float32Array(nb);
-    this.boneTwist = new Float32Array(nb);
-    /** Reference up-vector per bone, parallel-transported for twist. */
+    /** Reference up-vector per bone, parallel-transported to preserve roll. */
     this.boneUp = new Float32Array(nb * 3);
 
     for (let i = 0; i < nb; i++) {
@@ -146,7 +140,6 @@ export class Ragdoll {
       this.boneMass[i] = s.mass ?? 4;
       this.boneParent[i] = s.parent ?? -1;
       this.boneCone[i] = s.cone ?? 70 * DEG;
-      this.boneTwist[i] = s.twist ?? 40 * DEG;
       pm[a] += this.boneMass[i] * 0.5;
       pm[c] += this.boneMass[i] * 0.5;
       this.boneUp[i * 3] = 0;
@@ -172,16 +165,38 @@ export class Ragdoll {
       this._initUp(i);
     }
 
+    // A branching skeleton is not just a chain: hips and clavicles attach to
+    // the side of their parent, not its primary child's endpoint. Keep those
+    // attachment triangles rigid instead of letting whole limbs drift away.
+    const links = new Map();
+    const link = (a, b) => {
+      if (a === b) return;
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      links.set(key, [a, b, Math.hypot(px[b] - px[a], py[b] - py[a], pz[b] - pz[a])]);
+    };
+    this.boneRestAngle = new Float32Array(nb);
+    for (let i = 0; i < nb; i++) {
+      const a = this.boneHead[i], b = this.boneTail[i], p = this.boneParent[i];
+      link(a, b);
+      if (p < 0) continue;
+      const pa = this.boneHead[p], pb = this.boneTail[p];
+      link(pa, a); link(pb, a);
+      for (let j = 0; j < i; j++) if (this.boneParent[j] === p) link(this.boneHead[j], a);
+      const dot = ((px[pb] - px[pa]) * (px[b] - px[a]) +
+        (py[pb] - py[pa]) * (py[b] - py[a]) + (pz[pb] - pz[pa]) * (pz[b] - pz[a])) /
+        (this.boneLen[p] * this.boneLen[i]);
+      this.boneRestAngle[i] = Math.acos(Math.max(-1, Math.min(1, dot)));
+    }
+    this.distanceLinks = [...links.values()];
+
     // skeleton binding (filled by adoptSkeleton)
     this.bones3D = null;
     this.boneBind = null;
     this.rootObject = null;
     this._m4 = new THREE.Matrix4();
-    this._m4b = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
+    this._parentQ = new THREE.Quaternion();
     this._v3 = new THREE.Vector3();
-    this._v3b = new THREE.Vector3();
-    this._scale = new THREE.Vector3(1, 1, 1);
 
     this.aabb = { minx: 0, miny: 0, minz: 0, maxx: 0, maxy: 0, maxz: 0 };
     this._updateAabb();
@@ -324,8 +339,7 @@ export class Ragdoll {
   }
 
   _solveDistance() {
-    for (let i = 0; i < this.boneCount; i++) {
-      const a = this.boneHead[i], c = this.boneTail[i];
+    for (const [a, c, length] of this.distanceLinks) {
       const wa = this.invMass[a], wc = this.invMass[c];
       const w = wa + wc;
       if (w === 0) continue;
@@ -334,7 +348,7 @@ export class Ragdoll {
       const dz = this.pz[c] - this.pz[a];
       const d = Math.hypot(dx, dy, dz);
       if (d < 1e-9) continue;
-      const diff = (d - this.boneLen[i]) / d / w;
+      const diff = (d - length) / d / w;
       this.px[a] += dx * diff * wa;
       this.py[a] += dy * diff * wa;
       this.pz[a] += dz * diff * wa;
@@ -345,9 +359,8 @@ export class Ragdoll {
   }
 
   /**
-   * Swing limit: the child bone direction may not deviate from its parent's by
-   * more than `cone`. Correction rotates the child's free end back onto the
-   * cone boundary, weighted by inverse mass so heavy limbs win.
+   * Swing limit around the live parent/child angle at handoff. Correction is
+   * weighted by inverse mass so heavy limbs win.
    */
   _solveCones() {
     for (let i = 0; i < this.boneCount; i++) {
@@ -375,7 +388,11 @@ export class Ragdoll {
       let dot = ax * bx + ay * by + az * bz;
       if (dot > 1) dot = 1; else if (dot < -1) dot = -1;
       const angle = Math.acos(dot);
-      if (angle <= cone) continue;
+      // Limits are relative to the handed-over pose. A thigh points opposite
+      // the pelvis; treating every joint as a straight +Y chain folds it up.
+      const rest = this.boneRestAngle[i];
+      const target = Math.max(Math.max(0, rest - cone), Math.min(Math.PI, rest + cone, angle));
+      if (Math.abs(angle - target) < 1e-5) continue;
 
       // axis = a x b (fall back to any perpendicular when anti-parallel)
       let kx = ay * bz - az * by;
@@ -389,8 +406,8 @@ export class Ragdoll {
       }
       kx /= kl; ky /= kl; kz /= kl;
 
-      // Rodrigues: rotate the parent direction by `cone` about k -> target dir
-      const ca = Math.cos(cone), sa = Math.sin(cone);
+      // Rodrigues: rotate the parent direction to the allowed relative angle.
+      const ca = Math.cos(target), sa = Math.sin(target);
       const cross_x = ky * az - kz * ay;
       const cross_y = kz * ax - kx * az;
       const cross_z = kx * ay - ky * ax;
@@ -441,6 +458,15 @@ export class Ragdoll {
         const d = cts.depth[k];
         if (d <= 1e-5) continue;
         const nx = cts.nx[k], ny = cts.ny[k], nz = cts.nz[k];
+        // Reject a thin solid's far face, but retain a front-face contact the
+        // capsule crossed this step. Otherwise a floor's underside pushes down.
+        const side = ((this.px[a] + this.px[c]) * 0.5 - cts.px[k]) * nx +
+          ((this.py[a] + this.py[c]) * 0.5 - cts.py[k]) * ny +
+          ((this.pz[a] + this.pz[c]) * 0.5 - cts.pz[k]) * nz;
+        const previousSide = ((this.qx[a] + this.qx[c]) * 0.5 - cts.px[k]) * nx +
+          ((this.qy[a] + this.qy[c]) * 0.5 - cts.py[k]) * ny +
+          ((this.qz[a] + this.qz[c]) * 0.5 - cts.pz[k]) * nz;
+        if (side < -1e-6 && previousSide < -1e-6) continue;
         // Accumulate the *maximum* push along each normal instead of the sum:
         // a tessellated floor would otherwise eject the bone into orbit.
         const already = pushx * nx + pushy * ny + pushz * nz;
@@ -535,8 +561,9 @@ export class Ragdoll {
   }
 
   /**
-   * Parallel-transport each bone's reference up-vector so the rendered roll is
-   * continuous, then clamp the twist relative to the parent.
+   * Parallel-transport the live frame without aligning unrelated parent axes.
+   * Capsules do not simulate roll; a parent-up clamp twists boots and shoulders
+   * even when no particle moved, so preserve the handed-over roll instead.
    */
   _transportUp() {
     for (let i = 0; i < this.boneCount; i++) {
@@ -557,28 +584,6 @@ export class Ragdoll {
       }
       ux /= ul; uy /= ul; uz /= ul;
 
-      // twist limit against the parent's frame
-      const p = this.boneParent[i];
-      const lim = this.boneTwist[i];
-      if (p >= 0 && lim < Math.PI - 1e-3) {
-        let rx = this.boneUp[p * 3], ry = this.boneUp[p * 3 + 1], rz = this.boneUp[p * 3 + 2];
-        const rd = rx * dx + ry * dy + rz * dz;
-        rx -= dx * rd; ry -= dy * rd; rz -= dz * rd;
-        const rl = Math.hypot(rx, ry, rz);
-        if (rl > 1e-5) {
-          rx /= rl; ry /= rl; rz /= rl;
-          let cs = ux * rx + uy * ry + uz * rz;
-          if (cs > 1) cs = 1; else if (cs < -1) cs = -1;
-          const ang = Math.acos(cs);
-          if (ang > lim) {
-            // rotate u back towards r by (ang - lim)
-            const t = (ang - lim) / ang;
-            ux += (rx - ux) * t; uy += (ry - uy) * t; uz += (rz - uz) * t;
-            const nl2 = Math.hypot(ux, uy, uz) || 1;
-            ux /= nl2; uy /= nl2; uz /= nl2;
-          }
-        }
-      }
       this.boneUp[i * 3] = ux;
       this.boneUp[i * 3 + 1] = uy;
       this.boneUp[i * 3 + 2] = uz;
@@ -615,8 +620,7 @@ export class Ragdoll {
   }
 
   /**
-   * World transform of bone i. `upAxis` names which local axis runs down the
-   * bone — THREE bones conventionally point along +Y.
+   * World transform of bone i, with the capsule axis along local +Y.
    */
   getBoneTransform(i, outPos, outQuat) {
     const a = this.boneHead[i], c = this.boneTail[i];
@@ -652,10 +656,21 @@ export class Ragdoll {
    */
   adoptSkeleton(skeleton, boneMap) {
     const bones = new Array(this.boneCount).fill(null);
+    this.boneBind = new Array(this.boneCount);
     for (let i = 0; i < this.boneCount; i++) {
       const entry = boneMap?.[i] ?? boneMap?.[this.spec[i].name] ?? null;
       if (!entry) continue;
       bones[i] = typeof entry === 'string' ? skeleton.getBoneByName(entry) : entry;
+      if (!bones[i]) throw new Error(`[physics] Missing ragdoll bone: ${entry}`);
+      const bone = bones[i];
+      bone.updateWorldMatrix(true, false);
+      this.getBoneTransform(i, this._v3, this._q);
+      this.boneBind[i] = {
+        position: bone.position.clone(),
+        // The particle frame has an arbitrary roll. Preserve the actual live
+        // skeleton frame, including feet, instead of replacing it on death.
+        rotation: this._q.clone().invert().multiply(bone.getWorldQuaternion(this._parentQ)),
+      };
     }
     this.bones3D = bones;
     this.skeleton = skeleton;
@@ -681,14 +696,17 @@ export class Ragdoll {
       const bone = this.bones3D[i];
       if (!bone) continue;
       this.getBoneTransform(i, pos, quat);
-      this._m4b.compose(pos, quat, this._scale);
+      quat.multiply(this.boneBind[i].rotation);
       if (bone.parent) {
         bone.parent.updateWorldMatrix(true, false);
-        this._m4.copy(bone.parent.matrixWorld).invert().multiply(this._m4b);
-      } else {
-        this._m4.copy(this._m4b);
+        bone.parent.getWorldQuaternion(this._parentQ).invert();
+        quat.premultiply(this._parentQ);
+        if (!bone.parent.isBone) pos.applyMatrix4(this._m4.copy(bone.parent.matrixWorld).invert());
       }
-      this._m4.decompose(bone.position, bone.quaternion, this._v3b);
+      // Only the root translates. All other joint offsets and every bone's
+      // scale stay authored, so physics can pose but never stretch the model.
+      bone.position.copy(bone.parent?.isBone ? this.boneBind[i].position : pos);
+      bone.quaternion.copy(quat);
       bone.updateMatrix();
     }
     this.bones3D[0]?.updateMatrixWorld(true);
@@ -697,6 +715,7 @@ export class Ragdoll {
   dispose() {
     this.alive = false;
     this.bones3D = null;
+    this.boneBind = null;
     this.skeleton = null;
   }
 }
@@ -710,12 +729,9 @@ export function specFromSkeleton(skeleton, opts = {}) {
   const bones = skeleton.bones;
   const spec = [];
   const boneMap = [];
-  const indexOf = new Map();
   const v = new THREE.Vector3();
   const v2 = new THREE.Vector3();
   const totalMass = opts.mass ?? 82;
-
-  for (let i = 0; i < bones.length; i++) indexOf.set(bones[i], i);
 
   const specIndexOfBone = new Map();
   for (let i = 0; i < bones.length; i++) {
@@ -746,7 +762,6 @@ export function specFromSkeleton(skeleton, opts = {}) {
       mass: 1,
       parent: parentSpec,
       cone: (opts.cone ?? 70) * DEG,
-      twist: (opts.twist ?? 35) * DEG,
     });
     boneMap[si] = bone;
   }

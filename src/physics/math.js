@@ -87,7 +87,7 @@ export function rayTriangle(
 export function rayAabb(
   ox, oy, oz, ix, iy, iz,
   minx, miny, minz, maxx, maxy, maxz,
-  tmax
+  tmax, exitInside = false
 ) {
   let t0 = (minx - ox) * ix;
   let t1 = (maxx - ox) * ix;
@@ -105,8 +105,9 @@ export function rayAabb(
   const hi2 = t0 < t1 ? t1 : t0;
   if (lo2 > lo) lo = lo2;
   if (hi2 < hi) hi = hi2;
-  if (hi < 0 || lo > hi || lo > tmax) return Infinity;
-  return lo < 0 ? 0 : lo;
+  if (hi < 0 || lo > hi) return Infinity;
+  const t = lo < 0 ? (exitInside ? hi : 0) : lo;
+  return t > tmax ? Infinity : t;
 }
 
 /* ------------------------------------------------------------------ */
@@ -345,7 +346,7 @@ export function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r, maxDist) {
  */
 export function rayCapsule(
   ox, oy, oz, dx, dy, dz,
-  ax, ay, az, bx, by, bz, r, maxDist
+  ax, ay, az, bx, by, bz, r, maxDist, exitInside = false
 ) {
   const abx = bx - ax, aby = by - ay, abz = bz - az;
   const aox = ox - ax, aoy = oy - ay, aoz = oz - az;
@@ -365,25 +366,38 @@ export function rayCapsule(
     const disc = B * B - 4 * A * C;
     if (disc >= 0) {
       const sq = Math.sqrt(disc);
-      let t = (-B - sq) / (2 * A);
-      if (t < 0) t = (-B + sq) / (2 * A);
-      if (t >= 0 && t <= maxDist) {
-        const k = n + t * m;
-        if (k >= 0 && k <= 1) best = t;
+      for (let root = 0; root < 2; root++) {
+        const t = (-B + (root ? sq : -sq)) / (2 * A);
+        if (t >= 0 && t <= maxDist) {
+          const k = n + t * m;
+          if (k >= 0 && k <= 1 && (best < 0 || t < best)) best = t;
+        }
       }
     }
-  } else if (C <= 0) {
-    best = 0; // ray parallel to axis and already inside the cylinder
+  } else if (!exitInside && C <= 0 && n >= 0 && n <= 1) {
+    best = 0; // inside the finite cylinder, not merely its infinite extension
   }
-  const t1 = raySphere(ox, oy, oz, dx, dy, dz, ax, ay, az, r, maxDist);
-  if (t1 >= 0 && (best < 0 || t1 < best)) best = t1;
-  const t2 = raySphere(ox, oy, oz, dx, dy, dz, bx, by, bz, r, maxDist);
-  if (t2 >= 0 && (best < 0 || t2 < best)) best = t2;
+  // Only the outer hemispheres belong to the capsule surface. An inside ray
+  // must not stop where an end sphere overlaps the cylinder interior.
+  for (let cap = 0; cap < 2; cap++) {
+    const cx = cap ? aox - abx : aox;
+    const cy = cap ? aoy - aby : aoy;
+    const cz = cap ? aoz - abz : aoz;
+    const b = cx * dx + cy * dy + cz * dz;
+    const disc = b * b - (cx * cx + cy * cy + cz * cz - r * r);
+    if (disc < 0) continue;
+    const sq = Math.sqrt(disc);
+    for (let root = 0; root < 2; root++) {
+      const t = -b + (root ? sq : -sq);
+      const k = n + t * m;
+      if (t >= 0 && t <= maxDist && (cap ? k >= 1 : k <= 0) && (best < 0 || t < best)) best = t;
+    }
+  }
   return best;
 }
 
 /** Ray vs oriented box. `inv` is the world->local matrix elements (Matrix4.elements). */
-export function rayObb(ox, oy, oz, dx, dy, dz, inv, hx, hy, hz, maxDist) {
+export function rayObb(ox, oy, oz, dx, dy, dz, inv, hx, hy, hz, maxDist, exitInside = false) {
   const lx = inv[0] * ox + inv[4] * oy + inv[8] * oz + inv[12];
   const ly = inv[1] * ox + inv[5] * oy + inv[9] * oz + inv[13];
   const lz = inv[2] * ox + inv[6] * oy + inv[10] * oz + inv[14];
@@ -394,7 +408,7 @@ export function rayObb(ox, oy, oz, dx, dy, dz, inv, hx, hy, hz, maxDist) {
     lx, ly, lz,
     1 / (ldx || 1e-30), 1 / (ldy || 1e-30), 1 / (ldz || 1e-30),
     -hx, -hy, -hz, hx, hy, hz,
-    maxDist
+    maxDist, exitInside
   );
   return t === Infinity ? -1 : t;
 }

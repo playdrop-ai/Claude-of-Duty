@@ -60,6 +60,13 @@ export function autoEdgeWear(geo, margin = 0.02, amount = 1) {
 class PB {
   constructor() {
     this.list = [];
+    this.groups = [];
+  }
+
+  /** Keep adjacent primitives together as one real rigid subassembly. */
+  part() {
+    if (!this.groups.length) this.groups.push(0);
+    if (this.groups.at(-1) !== this.list.length) this.groups.push(this.list.length);
   }
 
   _push(g, wear, grime, ao) {
@@ -107,8 +114,22 @@ class PB {
 
   build() {
     const g = mergeSimple(this.list);
+    const parts = [];
+    let start = 0, indexStart = 0;
+    for (let i = 0; i < this.list.length; i++) {
+      const p = this.list[i];
+      const count = p.getAttribute('position').count;
+      const indexCount = p.index?.count ?? count;
+      if (!this.groups.length || this.groups.includes(i)) parts.push({ start, count: 0, indexStart, indexCount: 0 });
+      parts.at(-1).count += count;
+      parts.at(-1).indexCount += indexCount;
+      start += count;
+      indexStart += indexCount;
+    }
+    g.userData.parts = parts;
     for (const p of this.list) p.dispose();
     this.list.length = 0;
+    this.groups.length = 0;
     return g;
   }
 }
@@ -116,26 +137,29 @@ class PB {
 // ============================================================== containers ==
 function crate(rng, s = 0.62, slats = true) {
   const p = new PB();
-  p.box(s, s * 0.85, s * 0.92, 0, 0, 0, { bevel: 0.012, grime: 0.12 });
-  if (slats) {
-    // plank slats standing proud of the body, with one board sprung loose
-    const n = 3;
-    for (let i = 0; i < n; i++) {
-      const y = -s * 0.32 + (i / (n - 1)) * s * 0.64;
-      const loose = rng.float() < 0.18;
-      p.box(s * 1.01, s * 0.14, 0.016, 0, y, s * 0.46, {
-        bevel: 0.004,
-        rz: loose ? rng.range(-0.12, 0.12) : 0,
-        wear: 1,
+  const h = s * 0.85, d = s * 0.92, thickness = 0.03;
+  // Retain the authored random slat positions and the exterior silhouette.
+  const loose = slats ? Array.from({ length: 3 }, () => rng.float() < 0.18 ? rng.range(-0.12, 0.12) : 0) : [];
+  for (const side of [1, -1]) {
+    p.part();
+    p.box(s, h, thickness, 0, 0, side * (d - thickness) / 2, { bevel: 0.012, grime: 0.12 });
+    if (slats) {
+      for (let i = 0; i < 3; i++) p.box(s * 1.01, s * 0.14, 0.016, 0, -s * 0.32 + i * s * 0.32, side * s * 0.46, {
+        bevel: 0.004, rz: side === 1 ? loose[i] : 0,
       });
-      p.box(s * 1.01, s * 0.14, 0.016, 0, y, -s * 0.46, { bevel: 0.004 });
-      p.box(0.016, s * 0.14, s * 0.94, s * 0.5, y, 0, { bevel: 0.004 });
-      p.box(0.016, s * 0.14, s * 0.94, -s * 0.5, y, 0, { bevel: 0.004 });
+      for (const sx of [-1, 1]) p.box(0.05, s * 0.86, 0.05, sx * s * 0.48, 0, side * s * 0.44, { bevel: 0.006 });
     }
-    // corner posts
-    for (const sx of [-1, 1])
-      for (const sz of [-1, 1])
-        p.box(0.05, s * 0.86, 0.05, sx * (s * 0.48), 0, sz * (s * 0.44), { bevel: 0.006 });
+  }
+  for (const side of [1, -1]) {
+    p.part();
+    p.box(thickness, h, d, side * (s - thickness) / 2, 0, 0, { bevel: 0.012, grime: 0.12 });
+    if (slats) for (let i = 0; i < 3; i++) p.box(0.016, s * 0.14, s * 0.94, side * s * 0.5, -s * 0.32 + i * s * 0.32, 0, { bevel: 0.004 });
+  }
+  p.part();
+  p.box(s, thickness, d, 0, -(h - thickness) / 2, 0, { bevel: 0.012, grime: 0.12 });
+  p.part();
+  p.box(s, thickness, d, 0, (h - thickness) / 2, 0, { bevel: 0.012, grime: 0.12 });
+  if (slats) {
     // lid boards with real gaps: the top face is what the player looks down on,
     // and one unbroken panel there is what makes a crate read as a solid block
     const lid = 4;
@@ -158,8 +182,17 @@ function crate(rng, s = 0.62, slats = true) {
 function cardboardBox(rng, s = 0.45) {
   const p = new PB();
   const h = s * rng.range(0.6, 0.9);
-  p.box(s, h, s * rng.range(0.8, 1.1), 0, 0, 0, { bevel: 0.006, grime: 0.25 });
-  // flaps, one folded up
+  const d = s * rng.range(0.8, 1.1), t = 0.014;
+  // A hollow folded carton, not one solid block when it comes apart.
+  for (const side of [-1, 1]) {
+    p.part();
+    p.box(s, h, t, 0, 0, side * (d - t) / 2, { bevel: 0.006, grime: 0.25 });
+    p.part();
+    p.box(t, h, d, side * (s - t) / 2, 0, 0, { bevel: 0.006, grime: 0.25 });
+    p.part();
+    p.box(s, t, d, 0, side * (h - t) / 2, 0, { bevel: 0.006, grime: 0.25 });
+  }
+  // The folded flaps remain attached to the upper panel.
   p.box(s * 0.48, 0.012, s * 0.9, -s * 0.25, h / 2 + 0.006, 0, { bevel: 0.003, wear: 1 });
   p.box(s * 0.48, 0.012, s * 0.9, s * 0.25, h / 2 + 0.09, 0, { bevel: 0.003, rz: -0.9 });
   const g = p.build();
@@ -484,12 +517,23 @@ function chair(rng) {
 
 function cabinet(rng, w = 0.9, h = 1.15, d = 0.44) {
   const p = new PB();
-  p.box(w, h, d, 0, h / 2, 0, { bevel: 0.01, grime: 0.2 });
+  const t = 0.025;
+  for (const side of [-1, 1]) {
+    p.part();
+    p.box(t, h, d, side * (w - t) / 2, h / 2, 0, { bevel: 0.01, grime: 0.2 });
+    p.part();
+    p.box(w, h, t, 0, h / 2, side * (d - t) / 2, { bevel: 0.01, grime: 0.2 });
+  }
+  p.part();
+  p.box(w, t, d, 0, t / 2, 0, { bevel: 0.01, grime: 0.2 });
+  p.part();
+  p.box(w, t, d, 0, h - t / 2, 0, { bevel: 0.01, grime: 0.2 });
+  p.box(w + 0.04, 0.04, d + 0.04, 0, h + 0.02, 0, { bevel: 0.008, wear: 1, grime: 0.3 });
   for (const sx of [-1, 1]) {
+    p.part();
     p.box(w / 2 - 0.03, h - 0.12, 0.03, sx * (w / 4), h / 2, d / 2 + 0.01, { bevel: 0.005, wear: 1 });
     p.box(0.03, 0.1, 0.03, sx * 0.06, h / 2, d / 2 + 0.03, { wear: 1 });
   }
-  p.box(w + 0.04, 0.04, d + 0.04, 0, h + 0.02, 0, { bevel: 0.008, wear: 1, grime: 0.3 });
   return p.build();
 }
 
@@ -744,7 +788,26 @@ function palmTree(rng, h = 5.2) {
   return g;
 }
 
-/** One palm frond: leaflets along a curved spine, foliage-textured quads. */
+/** Tapered leaflet with a shallow raised midrib; the silhouette is real geometry. */
+function palmLeaflet(len) {
+  const g = new THREE.BufferGeometry();
+  const outline = [[0, 0], [0.24, -0.08], [0.65, -0.06], [1, 0], [0.65, 0.06], [0.24, 0.08]];
+  const positions = [], uvs = [], indices = [];
+  for (const [x, y] of outline) {
+    positions.push(x * len, y, 0);
+    uvs.push(x, y / 0.16 + 0.5);
+  }
+  positions.push(0.45 * len, 0, 0.012);
+  uvs.push(0.45, 0.5);
+  for (let i = 0; i < outline.length; i++) indices.push(6, i, (i + 1) % outline.length);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** One palm frond: continuous tapered leaflets along a solid curved spine. */
 function palmFrond(rng, len = 2.6) {
   const list = [];
   const n = 13;
@@ -754,8 +817,7 @@ function palmFrond(rng, len = 2.6) {
     const droop = -t * t * len * 0.42;
     const lw = (0.42 + Math.sin(t * Math.PI) * 0.55) * (1 - t * 0.35);
     for (const side of [-1, 1]) {
-      const q = new THREE.PlaneGeometry(lw, 0.16, 1, 1);
-      q.translate(lw / 2, 0, 0);
+      const q = palmLeaflet(lw);
       const m = mat(x, droop, 0, 0, 0, 0);
       const rot = new THREE.Matrix4().makeRotationZ(-0.5 - t * 0.5);
       const yaw = new THREE.Matrix4().makeRotationY(side * (1.15 - t * 0.35));
@@ -902,7 +964,14 @@ export function burntCar(rng) {
  */
 export function registerProps(A, rngIn) {
   const rng = rngIn;
-  const P = (id, key, geo, opts = {}) => A.proto(id, { geo, key, ...opts });
+  const furniture = ['pallet', 'table', 'table_small', 'stall', 'shelf', 'chair', 'cabinet'];
+  const openFrame = ['table', 'table_small', 'stall', 'shelf', 'chair'];
+  const P = (id, key, geo, opts = {}) => A.proto(id, {
+    geo, key,
+    breakable: id.startsWith('crate_') || id.startsWith('box_card_') ? 45 : furniture.includes(id) ? 75 : 0,
+    collideParts: openFrame.includes(id),
+    ...opts,
+  });
   /**
    * Mark a prototype as a LOOSE object: something a person dropped, stacked or
    * kicked, which is therefore never plumb and never exactly the nominal size.
@@ -977,7 +1046,7 @@ export function registerProps(A, rngIn) {
   // vegetation
   const palm = palmTree(rng, 5.4);
   P('palm_trunk', 'wood_dark', palm, { skirt: 0.57, chunk: false });
-  P('palm_frond', 'foliage', palmFrond(rng, 2.7), { chunk: false, receiveShadow: true });
+  P('palm_frond', 'palm_leaf', palmFrond(rng, 2.7), { chunk: false, receiveShadow: true });
   P('shrub', 'foliage', shrub(rng, 0.85));
   P('weeds', 'foliage', weedTuft(rng), { maxDist: 40 });
   P('planter', 'concrete_prop', planter(rng), { skirt: 0.33, ...LOOSE(0.07, 0.014) });

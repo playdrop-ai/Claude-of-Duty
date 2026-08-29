@@ -1,4 +1,12 @@
 node_modules/
+.DS_Store
+
+# Local PlayDrop state
+.playdrop.json
+
+# Local development and QA records
+evidence/
+progress.md
 
 # Build output
 dist/
@@ -14,3 +22,7 @@ demo/
 .tmp-demo/
 .tmp-rend/
 revcrops/
+
+# Listing review artifacts; final media remains tracked
+assets/marketing/playdrop/screenshots/review/
+assets/marketing/playdrop/video/review/

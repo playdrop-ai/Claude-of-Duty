@@ -216,7 +216,8 @@ void main() {
 `;
 
 export class Gtao {
-  constructor() {
+  constructor(scale = 0.5) {
+    this.scale = scale;
     this.core = new Pass('ow-gtao', AO_CORE, {
       tDepth: { value: null },
       tNormal: { value: null },
@@ -250,6 +251,8 @@ export class Gtao {
 
   setSize(w, h) {
     this.dispose(true);
+    w = Math.max(1, Math.round(w * this.scale));
+    h = Math.max(1, Math.round(h * this.scale));
     const o = { type: THREE.HalfFloatType, format: THREE.RGFormat, name: 'gtao' };
     this.rtRaw = hdrTarget(w, h, o);
     this.rtBlur = hdrTarget(w, h, o);

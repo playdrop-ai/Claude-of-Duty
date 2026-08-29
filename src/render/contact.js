@@ -95,7 +95,8 @@ void main() {
 `;
 
 export class ContactShadows {
-  constructor() {
+  constructor(scale = 0.5) {
+    this.scale = scale;
     this.pass = new Pass('ow-contact', CONTACT, {
       tDepth: { value: null },
       tNormal: { value: null },
@@ -131,6 +132,8 @@ export class ContactShadows {
   setSize(w, h) {
     this.rtA?.dispose();
     this.rtB?.dispose();
+    w = Math.max(1, Math.round(w * this.scale));
+    h = Math.max(1, Math.round(h * this.scale));
     const o = { type: THREE.HalfFloatType, format: THREE.RGFormat, name: 'contact' };
     this.rtA = hdrTarget(w, h, o);
     this.rtB = hdrTarget(w, h, o);

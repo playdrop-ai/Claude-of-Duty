@@ -132,7 +132,8 @@ void main() {
 `;
 
 export class Ssr {
-  constructor() {
+  constructor(scale = 0.25) {
+    this.scale = scale;
     this.pass = new Pass('ow-ssr', SSR, {
       tColor: { value: null },
       tDepth: { value: null },
@@ -155,10 +156,11 @@ export class Ssr {
   setSize(w, h) {
     this.rtA?.dispose();
     this.rtB?.dispose();
-    // half resolution: reflections are low frequency and this is the single
-    // most expensive ray-marching pass in the frame
-    const hw = Math.max(1, w >> 1);
-    const hh = Math.max(1, h >> 1);
+    // Reflections are temporally sourced, blurred, and only replace the
+    // low-frequency IBL specular term. Quarter resolution avoids spending a
+    // full-resolution ray march on detail this pass deliberately removes.
+    const hw = Math.max(1, Math.round(w * this.scale));
+    const hh = Math.max(1, Math.round(h * this.scale));
     this.rtA = hdrTarget(hw, hh, { name: 'ssr' });
     this.rtB = hdrTarget(hw, hh, { name: 'ssr-blur' });
     this.pass.uniforms.uTexel.value.set(1 / hw, 1 / hh);

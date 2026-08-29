@@ -103,7 +103,7 @@ function report(r) {
   row('crouch eye height', r.crouch.eye, '1.02 m', near(r.crouch.eye, 1.02, 0.03));
   row('prone eye height', r.prone.eye, '0.40 m', near(r.prone.eye, 0.4, 0.03));
   row('ads speed', r.ads.speed, '~2.29 m/s', near(r.ads.speed, 2.29, 0.2));
-  row('ads fov', r.ads.fov, '57.6 deg', near(r.ads.fov, 57.6, 0.6));
+  row('rifle ads fov', r.ads.fov, '59.2 deg', near(r.ads.fov, 59.2, 0.6));
   row('sprint fov', r.sprint.fov, '> 82 deg', r.sprint.fov > 82);
   row('jump apex', r.jump.apex, '0.60 m', near(r.jump.apex, 0.6, 0.06));
   row('air time', r.jump.airTime, '~0.48 s', near(r.jump.airTime, 0.48, 0.08));

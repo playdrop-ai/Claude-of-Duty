@@ -279,6 +279,13 @@ export class Ambience {
 
   /* --------------------------------------------------------------------- */
 
+  reset() {
+    for (const emitter of this.emitters) { emitter.active = false; emitter.object = null; }
+    this._tracked.clear();
+    this._scanTimer = 2;
+    this._warm = this.moteAcc = this.shimmerAcc = 0;
+  }
+
   /** Discover objects the world subsystem tagged as smoking. */
   _scan(scene) {
     scene.traverse((o) => {

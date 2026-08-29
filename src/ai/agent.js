@@ -47,45 +47,11 @@ const HITBOXES = [
   ['leg', 'UpLegL', 'FootL', 0.105, 0.7],
 ];
 
-/**
- * Ragdoll bone spec, in the order the solver wants it.
- *   [ headBone, tailBone, radius, massFraction, parentIndex, cone°, twist°, map ]
- * `map` false marks a stub whose only job is to weld a limb chain to the torso:
- * the solver shares a particle between two bones only when their endpoints are
- * coincident, so the shoulder and hip need a bone that starts exactly on the
- * spine joint. Deriving our own spec (instead of letting physics infer one from
- * all 25 bones) also gets the capsule radii right, which is the difference
- * between a body and a pancake.
- */
-const DOLL = [
-  ['Hips', 'Spine', 0.135, 0.14, -1, 0, 0, true],
-  ['Spine', 'Spine1', 0.125, 0.10, 0, 22, 16, true],
-  ['Spine1', 'Spine2', 0.135, 0.14, 1, 18, 12, true],
-  ['Spine2', 'Neck', 0.130, 0.10, 2, 16, 10, true],
-  ['Neck', 'Head', 0.052, 0.03, 3, 30, 25, true],
-  ['Head', 'HeadTop', 0.098, 0.07, 4, 42, 30, true],
-  // stubs get a free cone: their direction is lateral while the parent points
-  // up the spine, so any limit here is violated in the bind pose and the solver
-  // would inject energy trying to fix it
-  ['Spine2', 'UpperArmR', 0.055, 0.02, 3, 179, 179, false],
-  ['UpperArmR', 'ForearmR', 0.058, 0.027, 6, 100, 60, true],
-  ['ForearmR', 'HandR', 0.048, 0.018, 7, 80, 45, true],
-  ['HandR', 'FingersR', 0.038, 0.006, 8, 55, 40, true],
-  ['Spine2', 'UpperArmL', 0.055, 0.02, 3, 179, 179, false],
-  ['UpperArmL', 'ForearmL', 0.058, 0.027, 10, 100, 60, true],
-  ['ForearmL', 'HandL', 0.048, 0.018, 11, 80, 45, true],
-  ['HandL', 'FingersL', 0.038, 0.006, 12, 55, 40, true],
-  ['Hips', 'UpLegR', 0.065, 0.02, 0, 179, 179, false],
-  ['UpLegR', 'LegR', 0.088, 0.10, 14, 95, 35, true],
-  ['LegR', 'FootR', 0.068, 0.045, 15, 70, 20, true],
-  ['FootR', 'ToeR', 0.050, 0.012, 16, 40, 20, true],
-  ['Hips', 'UpLegL', 0.065, 0.02, 0, 179, 179, false],
-  ['UpLegL', 'LegL', 0.088, 0.10, 18, 95, 35, true],
-  ['LegL', 'FootL', 0.068, 0.045, 19, 70, 20, true],
-  ['FootL', 'ToeL', 0.050, 0.012, 20, 40, 20, true],
-];
-
-const DEG = Math.PI / 180;
+// Pelvis, chest, head and shoulders. A head sliver alone is not a clear target.
+const SIGHT_HEIGHTS = [0.2, 0.6, 1, 0.6, 0.6];
+const SIGHT_WEIGHTS = [0.2, 0.32, 0.12, 0.18, 0.18];
+const MIN_VISIBILITY = 0.18;
+const CLOSE_ENGAGE_RANGE = 10;
 
 let _nextId = 1;
 
@@ -149,7 +115,7 @@ export class Agent {
         height: this.height,
         position: this.position,
         stepHeight: 0.42,
-        slopeLimit: 48,
+        slopeLimit: 48 * Math.PI / 180,
       })
       : null;
     this.velocity = new THREE.Vector3();
@@ -173,8 +139,7 @@ export class Agent {
     }
 
     /* ---------------- stats ---------------- */
-    this.health = 100;
-    this.maxHealth = 100;
+    this.health = this.maxHealth = 100 * (opts.difficulty ?? 1);
     this.alive = true;
     this.state = STATE.IDLE;
     this.stateTime = 0;
@@ -183,28 +148,31 @@ export class Agent {
 
     /* ---------------- perception ---------------- */
     this.eyeHeight = RIG.eyeHeight * this.scale;
-    this.viewRange = 58;
+    this.viewRange = 34;
     this.viewCos = Math.cos((100 * Math.PI) / 180 / 2);
     this.awareness = 0; // 0..1 build-up before the target is acknowledged
     this.hasTarget = false;
     this.targetVisible = false;
-    this.target = null;
+    this.targetVisibility = 0;
+    this.targetDistance = Infinity;
     this.lastKnown = new THREE.Vector3();
     this.lastKnownAge = Infinity;
     this.searchPoint = new THREE.Vector3();
+    this.searchAge = Infinity;
     this.suppression = 0;
-    this.reactionTimer = 0;
     this.alertness = 0;
+    this.senseTimer = (this.id % 6) / 60;
+    this.senseElapsed = 0;
 
     /* ---------------- combat ---------------- */
-    this.weaponRange = 60;
+    this.weaponRange = 32;
     this.fireRate = this.variantName === 'irregular' ? 8.2 : 10.5;
     this.burstLeft = 0;
     this.fireCooldown = 0;
     this.burstCooldown = this.rng.range(0.4, 1.4);
     this.magSize = 30;
     this.ammo = this.magSize;
-    this.spread = 0.032;
+    this.spread = 0.024;
     this.weaponDamage = 17;
     this.aimTarget = new THREE.Vector3();
     this.aimActual = new THREE.Vector3();
@@ -215,6 +183,7 @@ export class Agent {
     this.peekTimer = this.rng.range(0.5, 2.5);
     this.grenadeCooldown = this.rng.range(9, 22);
     this.hasGrenade = true;
+    this.openingGrenade = null;
 
     /* ---------------- navigation ---------------- */
     this.path = [];
@@ -252,6 +221,7 @@ export class Agent {
     this._boneA = new THREE.Vector3();
     this._boneB = new THREE.Vector3();
     this._muzzleDir = new THREE.Vector3();
+    this._visiblePoint = new THREE.Vector3();
 
     this.clip = 'idle';
   }
@@ -261,7 +231,7 @@ export class Agent {
   /* ================================================================== */
 
   get eye() {
-    return this._eye.set(this.position.x, this.position.y + this.eyeHeight, this.position.z);
+    return this._eye.set(this.position.x, this.position.y + (this.crouch ? 1.06 * this.scale : this.eyeHeight), this.position.z);
   }
 
   update(dt, ctx) {
@@ -275,11 +245,17 @@ export class Agent {
     this.repathTimer -= dt;
     this.vaultCooldown -= dt;
     if (this.lastKnownAge < 1e6) this.lastKnownAge += dt;
+    if (this.searchAge < 1e6) this.searchAge += dt;
 
     // a path the frame budget deferred: ask again before anything else does
     if (this.pathPending) this._goTo(this._pendingDest);
 
     this._sense(dt);
+    if (this._updateOpeningGrenade(dt)) {
+      this._move(dt);
+      this._drive(dt);
+      return;
+    }
     this._think(dt);
     this._move(dt);
     this._shoot(dt);
@@ -291,37 +267,73 @@ export class Agent {
   /* ================================================================== */
 
   _sense(dt) {
+    this.senseElapsed += dt;
+    this.senseTimer -= dt;
+    if (this.senseTimer > 0) return;
+    this.senseTimer += 0.1;
+    dt = this.senseElapsed;
+    this.senseElapsed = 0;
+    if (this.ctx.get('player').dead) {
+      this.hasTarget = this.targetVisible = false;
+      this.targetVisibility = 0;
+      this.awareness = 0;
+      this.lastKnownAge = Infinity;
+      return;
+    }
+    const playerSystem = this.ctx.get('player');
     const player = this.ai.playerPosition(this._v3);
-    if (!player) return;
     const eye = this.eye;
     const to = this._dir.copy(player).sub(eye);
     const dist = to.length();
-    let visible = false;
+    this.targetDistance = dist;
+    let visibility = 0;
+    this._visiblePoint.set(0, 0, 0);
     if (dist < this.viewRange) {
-      to.multiplyScalar(1 / dist);
+      to.multiplyScalar(1 / Math.max(0.001, dist));
       const fwd = this._v2.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       const dot = fwd.x * to.x + fwd.z * to.z;
       // peripheral vision widens once alerted
       const cone = this.hasTarget ? -0.2 : this.viewCos - this.alertness * 0.25;
       if (dot > cone || dist < 4.5) {
-        visible = this.phys ? this.phys.lineOfSight(eye, player, this.phys.MASK.SIGHT) : true;
+        const c = playerSystem.hitbox;
+        const horizontal = Math.max(0.001, Math.hypot(to.x, to.z));
+        for (let i = 0; i < SIGHT_HEIGHTS.length; i++) {
+          const h = SIGHT_HEIGHTS[i], point = this._v;
+          point.set(c.ax + (c.bx - c.ax) * h, c.ay + (c.by - c.ay) * h, c.az + (c.bz - c.az) * h);
+          if (i >= 3) {
+            const side = (i === 3 ? -1 : 1) * c.radius * 0.75;
+            point.x += to.z / horizontal * side;
+            point.z -= to.x / horizontal * side;
+          }
+          if (!this.phys.lineOfSight(eye, point, this.phys.MASK.SIGHT)) continue;
+          const weight = SIGHT_WEIGHTS[i] * this.ai.visibilityBetween(eye, point);
+          visibility += weight;
+          this._visiblePoint.addScaledVector(point, weight);
+        }
       }
     }
+    const visible = visibility >= MIN_VISIBILITY;
+    this.targetVisibility = visibility;
     this.targetVisible = visible;
 
     if (visible) {
-      // reaction: fast head-on and close, slow at the edge of vision
-      const rate = 1 / Math.max(0.12, 0.16 + dist * 0.0075 + (1 - this.alertness) * 0.28);
-      this.awareness = Math.min(1, this.awareness + dt * rate);
-      this.lastKnown.copy(player);
+      // Small/dim targets take longer to identify, including after a lost sightline.
+      const acquiring = this.awareness < 1;
+      const reaction = dist <= CLOSE_ENGAGE_RANGE ? 0.2 + 0.15 * dist / CLOSE_ENGAGE_RANGE :
+        0.4 + 0.85 * dist / this.viewRange;
+      this.awareness = Math.min(1, this.awareness + dt * visibility / reaction);
+      this.lastKnown.copy(this._visiblePoint).multiplyScalar(1 / visibility);
       this.lastKnownAge = 0;
+      this.searchPoint.copy(this.lastKnown);
+      this.searchAge = 0;
       this.alertness = 1;
       if (this.awareness >= 1) {
         this.hasTarget = true;
-        this.target = player;
+        if (acquiring && dist <= CLOSE_ENGAGE_RANGE) this.burstCooldown = Math.min(this.burstCooldown, 0.1);
       }
     } else {
-      this.awareness = Math.max(0, this.awareness - dt * 0.35);
+      this.awareness = 0;
+      this.wantFire = false;
       if (this.hasTarget && this.lastKnownAge > 6.5) this.hasTarget = false;
     }
   }
@@ -333,12 +345,14 @@ export class Agent {
     if (d > loudness) return;
     const strength = 1 - d / loudness;
     this.alertness = Math.max(this.alertness, Math.min(1, 0.35 + strength));
-    if (this.lastKnownAge > 1.2 || strength > 0.6) {
-      this.lastKnown.copy(pos);
-      this.lastKnownAge = Math.min(this.lastKnownAge, 0.35);
+    if (!this.targetVisible && (this.searchAge > 1.2 || strength > 0.6)) {
+      this.searchPoint.copy(pos);
+      const uncertainty = 1 + d * 0.08;
+      this.searchPoint.x += this.rng.signed() * uncertainty;
+      this.searchPoint.z += this.rng.signed() * uncertainty;
+      this.searchAge = 0;
     }
     // hearing alone never grants a target; it turns the head and the body
-    this.awareness = Math.min(0.85, this.awareness + strength * 0.5);
     if (this.state === STATE.IDLE || this.state === STATE.PATROL) this._setState(STATE.ALERT);
   }
 
@@ -357,11 +371,32 @@ export class Agent {
     if (this.state === s) return;
     this.state = s;
     this.stateTime = 0;
-    if (s !== STATE.COMBAT && s !== STATE.SUPPRESSED) this.peeking = false;
+    if (s !== STATE.COMBAT) {
+      this.peeking = false;
+      this.wantFire = false;
+      this.squad?.releasePeek(this);
+    }
   }
 
   _think(dt) {
     const sq = this.squad;
+    // A clearly identified close threat takes priority over moving to cover or
+    // waiting for a squad peek slot. Sight, acquisition and real muzzle aim stay
+    // authoritative; an unseen nearby player does not interrupt a flank.
+    if (this.targetVisible && this.hasTarget && this.awareness >= 1 && this.targetDistance <= CLOSE_ENGAGE_RANGE) {
+      this._setState(STATE.COMBAT);
+      this.ai.cover?.release(this.id);
+      this.cover = null;
+      sq?.releasePeek(this);
+      this.hasMoveTarget = this.pathPending = false;
+      this.desiredSpeed = 0;
+      this.crouch = false;
+      this.peeking = true;
+      this.peekTimer = 0;
+      this.aimWeight = 1;
+      this.wantFire = true;
+      return;
+    }
     switch (this.state) {
       case STATE.IDLE:
         this.desiredSpeed = 0;
@@ -397,8 +432,12 @@ export class Agent {
           this._enterCombat();
           break;
         }
-        // move to the last known position, then look around
-        if (this.lastKnownAge < 8 && !this.hasMoveTarget) this._goTo(this.lastKnown);
+        // Investigate a sighting, sound or call-out without treating it as aim.
+        if (this.searchAge < 8 && !this.hasMoveTarget && !this.pathPending && this.repathTimer <= 0) {
+          this.searchPoint.y = this.ai.groundAt(this.searchPoint.x, this.searchPoint.z, this.searchPoint.y + 0.5);
+          this._goTo(this.searchPoint);
+          this.repathTimer = 1;
+        }
         if (this.stateTime > 12) this._setState(this.patrolPoints ? STATE.PATROL : STATE.IDLE);
         break;
       }
@@ -446,14 +485,83 @@ export class Agent {
 
   _enterCombat() {
     this._setState(STATE.COMBAT);
+    this.ai.cover?.release(this.id);
     this.cover = null;
     this.repathTimer = 0;
+  }
+
+  /**
+   * Queue the authored opening beat through the real CPU actor. The AI system
+   * chooses the distant soldier and safe randomized landing point; the Agent
+   * owns the wind-up, facing, aim, inventory consumption, and actual throw.
+   */
+  queueOpeningGrenade(threat, target, delay = 0.65) {
+    if (!this.alive || !this.hasGrenade || this.openingGrenade) return false;
+    this.openingGrenade = {
+      threat: threat.clone(),
+      target: target.clone(),
+      timer: Math.max(0.25, delay),
+    };
+    this.hasMoveTarget = false;
+    this.pathPending = false;
+    this.desiredSpeed = 0;
+    this.wantFire = false;
+    this.crouch = false;
+    this.alertness = 1;
+    this.awareness = 1;
+    this.hasTarget = true;
+    this.lastKnown.copy(threat);
+    this.lastKnownAge = 0;
+    this.cover = null;
+    this.ai.cover?.release(this.id);
+    return true;
+  }
+
+  /** Stable upper-body release point shared by arc validation and live throws. */
+  grenadeOrigin(target, out) {
+    const eye = this.eye;
+    const dx = target.x - eye.x;
+    const dz = target.z - eye.z;
+    const distance = Math.hypot(dx, dz);
+    out.copy(eye);
+    if (distance > 1e-4) {
+      out.x += (dx / distance) * 0.34;
+      out.z += (dz / distance) * 0.34;
+    }
+    out.y -= 0.18;
+    return out;
+  }
+
+  _updateOpeningGrenade(dt) {
+    const action = this.openingGrenade;
+    if (!action) return false;
+    this.desiredSpeed = 0;
+    this.hasMoveTarget = false;
+    this.wantFire = false;
+    this.crouch = false;
+    this.aimWeight = 1;
+    this.aimTarget.lerp(action.threat, Math.min(1, dt * 8));
+    this.targetYaw = Math.atan2(
+      action.threat.x - this.position.x,
+      action.threat.z - this.position.z
+    );
+    action.timer -= dt;
+    if (action.timer <= 0) {
+      const target = action.target;
+      this.openingGrenade = null;
+      this._throwGrenade(target, { opening: true });
+      this.ai.onOpeningGrenadeThrown?.(this, target);
+    }
+    return true;
   }
 
   _combat(dt) {
     const target = this.hasTarget ? this.lastKnown : this.lastKnownAge < 5 ? this.lastKnown : null;
     if (!target) {
       this._setState(STATE.ALERT);
+      this.ai.cover?.release(this.id);
+      this.cover = null;
+      this.hasMoveTarget = this.pathPending = false;
       return;
     }
     const sq = this.squad;
@@ -475,7 +583,7 @@ export class Agent {
     }
 
     // no cover yet, or the current one no longer protects: find one
-    if (!this.cover || this.repathTimer <= 0) {
+    if (this.repathTimer <= 0) {
       const pick = this.ai.cover?.pick(this.position, target, {
         id: this.id,
         squad: sq?.members,
@@ -501,7 +609,7 @@ export class Agent {
       this.cover &&
       !this.hasMoveTarget &&
       !this.pathPending && // still queued behind the frame's A* budget
-      this.position.distanceTo(this.coverPos) > 0.85
+      this.position.distanceTo(this.coverPos) > 0.25
     ) {
       this.cover = null;
       this.ai.cover?.release(this.id);
@@ -509,7 +617,7 @@ export class Agent {
     }
 
     const atCover = this.cover
-      ? this.position.distanceTo(this.coverPos) < 0.85
+      ? this.position.distanceTo(this.coverPos) < 0.25
       : false;
 
     if (this.cover && !atCover) {
@@ -522,29 +630,28 @@ export class Agent {
       this.desiredSpeed = 0;
       this.hasMoveTarget = false;
       // peek-and-shoot, gated by the squad so they alternate
-      const allowed = !sq || sq.requestPeek(this, dt);
       if (this.peekTimer <= 0) {
-        this.peeking = allowed && this.targetVisible !== false;
+        this.peeking = (!sq || sq.requestPeek(this)) && this.hasTarget;
         this.peekTimer = this.peeking ? this.rng.range(1.1, 2.4) : this.rng.range(0.7, 1.8);
-        if (this.peeking && this.cover) {
-          this.peekSide = this.ai.cover.peekOffset(this.cover, target, this.eyeHeight, this._v2);
-          this.coverPos.copy(this._v2);
+        if (this.cover) {
+          if (this.peeking) {
+            const side = this.ai.cover.peekOffset(this.cover, target, this.eyeHeight, this.coverPos);
+            this.peeking = side !== null;
+            this.peekSide = side ?? 0;
+          } else this.coverPos.set(this.cover.x, this.cover.y, this.cover.z);
+          if (this.position.distanceTo(this.coverPos) > 0.2) this._goTo(this.coverPos);
         }
       }
-      this.crouch = this.cover ? !this.cover.high || !this.peeking : false;
+      this.crouch = Boolean(this.cover && !this.peeking);
       this.aimWeight = this.peeking ? 1 : 0.55;
-      this.wantFire = this.peeking && this.targetVisible && this.hasTarget && dist < this.weaponRange;
-      // suppressing fire at the last known spot even without a clean shot
-      if (!this.wantFire && this.hasTarget && this.lastKnownAge < 2.2 && this.peeking) {
-        this.wantFire = this.rng.float() < 0.35;
-      }
+      this.wantFire = this.peeking && this.targetVisible && this.hasTarget && this.awareness >= 1 && dist < this.weaponRange;
     }
 
     // flank when the player has been static and we have friends shooting
     if (
       sq &&
       this.stateTime > 4 &&
-      this.grenadeCooldown < 0 === false &&
+      this.grenadeCooldown >= 0 &&
       sq.canFlank(this) &&
       this.rng.float() < dt * 0.25
     ) {
@@ -570,6 +677,7 @@ export class Agent {
       this.grenadeCooldown <= 0 &&
       dist > 8 &&
       dist < 26 &&
+      this.targetVisible && this.awareness >= 1 &&
       this.lastKnownAge < 1.5 &&
       (!sq || sq.requestGrenade(this))
     ) {
@@ -618,7 +726,7 @@ export class Agent {
       const to = this._v.copy(wp).sub(this.position);
       to.y = 0;
       const d = to.length();
-      if (d < (this.pathIndex === this.pathLen - 1 ? 0.45 : 0.75)) {
+      if (d < (this.pathIndex === this.pathLen - 1 ? (this.cover ? 0.2 : 0.45) : 0.75)) {
         this.pathIndex++;
         if (this.pathIndex >= this.pathLen) this.hasMoveTarget = false;
       } else {
@@ -733,7 +841,7 @@ export class Agent {
 
   _shoot(dt) {
     // where the gun is pointing: lead toward the target with human error
-    const t = this.hasTarget || this.lastKnownAge < 3 ? this.lastKnown : null;
+    const t = this.targetVisible ? this.lastKnown : null;
     if (t) {
       // aim at the chest, not the feet
       this._v.set(t.x, t.y + 0.05, t.z);
@@ -753,7 +861,11 @@ export class Agent {
       this.aimTarget.lerp(this._v2, Math.min(1, dt * 3));
     }
 
-    if (!this.wantFire || this.animator.reloading || this.animator.vaulting) return;
+    if (!this.wantFire || !this.targetVisible || this.awareness < 1 || this.targetDistance >= this.weaponRange ||
+        this.animator.reloading || this.animator.vaulting) {
+      if (this.burstLeft > 0) this._endBurst();
+      return;
+    }
     if (this.ammo <= 0) {
       this.animator.reload(this.variantName === 'irregular' ? 2.9 : 2.35);
       this.ai.emitReload(this);
@@ -762,22 +874,29 @@ export class Agent {
     }
     if (this.burstLeft <= 0) {
       if (this.burstCooldown > 0) return;
-      this.burstLeft = this.rng.int(3, 7);
-      this.burstCooldown = this.rng.range(0.45, 1.35) + this.suppression * 0.5;
+      this.burstLeft = this.rng.int(3, 5);
     }
     if (this.fireCooldown > 0) return;
     this.fireCooldown = 1 / this.fireRate;
     this.burstLeft--;
     this.ammo--;
     this._fireRound();
+    if (this.burstLeft === 0) this._endBurst();
+  }
+
+  _endBurst() {
+    this.burstLeft = 0;
+    // Rest starts after the final round, not while the burst is still firing.
+    this.burstCooldown = this.rng.range(0.85, 1.45) + this.suppression * 0.5;
   }
 
   _fireRound() {
     const an = this.animator;
     const origin = an.muzzleWorld;
     const dir = this._muzzleDir.copy(an.muzzleDir);
-    // cone of fire: worse when suppressed, better the longer we have been aiming
-    const spread = this.spread * (1 + this.suppression * 1.5);
+    const distance = Math.min(1, this.targetDistance / this.weaponRange);
+    const spread = this.spread * (1 + 1.8 * distance * distance) *
+      (1 + 1.6 * (1 - this.targetVisibility)) * (1 + this.suppression * 1.5);
     dir.x += this.rng.gauss() * spread;
     dir.y += this.rng.gauss() * spread * 0.8;
     dir.z += this.rng.gauss() * spread;
@@ -786,11 +905,11 @@ export class Agent {
     this.ai.onAgentFire(this, origin, dir);
   }
 
-  _throwGrenade(target) {
+  _throwGrenade(target, opts = {}) {
     this.grenadeCooldown = this.rng.range(16, 34);
     this.hasGrenade = false;
-    const from = this._v.copy(this.animator.muzzleWorld);
-    this.ai.throwGrenade(this, from, target);
+    const from = this.grenadeOrigin(target, this._v);
+    this.ai.throwGrenade(this, from, target, opts);
   }
 
   /* ================================================================== */
@@ -814,10 +933,7 @@ export class Agent {
     // knowing where it came from
     if (dir) {
       this._v.copy(point).addScaledVector(dir, -14);
-      if (this.lastKnownAge > 0.5) {
-        this.lastKnown.copy(this._v);
-        this.lastKnownAge = 0.4;
-      }
+      this.hear(this._v, this.viewRange);
     }
     if (this.state === STATE.IDLE || this.state === STATE.PATROL) this._setState(STATE.ALERT);
 
@@ -850,6 +966,7 @@ export class Agent {
     this.wantFire = false;
     this.animator.enabled = false;
     this.ai.cover?.release(this.id);
+    this.squad?.releasePeek(this);
     if (this.controller) this.phys.removeCharacter(this.controller);
     this.controller = null;
     for (const c of this.colliders) this.phys?.removeCollider(c);
@@ -891,24 +1008,15 @@ export class Agent {
   _makeRagdoll(impulse, point) {
     const phys = this.phys;
     if (!phys) return null;
-    // Fat capsules that start half-buried in the floor tunnel straight through
-    // it: the contact normal flips once a bone's axis is on the far side. Lift
-    // the pose clear of the ground for the one frame it takes to build the doll,
-    // then put the group back — the body drops the 15 cm invisibly.
-    const lift = 0.15 * this.scale;
-    this.group.position.y += lift;
     this.group.updateMatrixWorld(true);
     const rd = phys.createRagdollFromSkeleton(this.mesh, {
       actor: this,
       mass: this.mass,
       radiusRatio: 0.42,
       cone: 74,
-      twist: 38,
       iterations: 8,
       velocity: { x: this.velocity.x * 0.6, y: 0, z: this.velocity.z * 0.6 },
     });
-    this.group.position.y -= lift;
-    this.group.updateMatrixWorld(true);
     if (!rd) return null;
     if (impulse && point) {
       // wide radius: a tight one dumps all of it into whichever light bone is
@@ -1000,10 +1108,13 @@ export class Agent {
   }
 
   dispose() {
+    this.ai.cover?.release(this.id);
+    this.squad?.releasePeek(this);
     if (this.controller) this.phys?.removeCharacter(this.controller);
     for (const c of this.colliders) this.phys?.removeCollider(c);
     this.colliders.length = 0;
     if (this.ragdoll) this.phys?.removeRagdoll(this.ragdoll);
+    this.skeleton.dispose();
     this.group.parent?.remove(this.group);
   }
 }

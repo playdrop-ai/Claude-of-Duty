@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { CAMERA, MOVE } from './tuning.js';
 import {
-  Spring, RecoilAxis, clamp, clamp01, lerp, approach, hashNoise, DEG,
+  Spring, RecoilAxis, clamp, clamp01, lerp, approach, smootherstep, hashNoise, DEG,
 } from './springs.js';
 
 export class CameraRig {
@@ -67,6 +67,13 @@ export class CameraRig {
     // ---- breathing -------------------------------------------------------
     this.breathPhase = 0;
 
+    // ---- death fall ------------------------------------------------------
+    // A first-person body needs to lose height and balance when it dies. The
+    // player controller stays rooted while this camera-only fall resolves, so
+    // it cannot tunnel through geometry or alter the respawn point.
+    this.deathT = 0;
+    this.deathSide = 1;
+
     // ---- fov -------------------------------------------------------------
     this.baseFov = ctx.config.fov;
     this.fov = this.baseFov;
@@ -108,8 +115,15 @@ export class CameraRig {
     this.turnRoll = 0;
     this.slideRoll = 0;
     this.slideBlend = 0;
+    this.deathT = 0;
     this.fovMove = 1;
     this.fovAds = 1;
+  }
+
+  beginDeath(side = 1) {
+    this.deathT = 0;
+    this.deathSide = side < 0 ? -1 : 1;
+    this.addTrauma(0.4);
   }
 
   /* ==================================================================== */
@@ -279,18 +293,30 @@ export class CameraRig {
       base.z + m.leanOffsetZ + this.offset.z
     );
 
+    // Drop the eye to body height over just under one second, with a lateral
+    // shoulder collapse. The KIA overlay waits for the readable part of this
+    // motion, so the player sees the body go down instead of an upright freeze.
+    this.deathT = health.dead ? Math.min(1, this.deathT + dt / 0.9) : 0;
+    const death = smootherstep(this.deathT);
+    this.eyePosition.addScaledVector(this._right, this.deathSide * death * 0.16);
+    this.eyePosition.y -= death * 1.3;
+
     // ---- assemble rotation ----------------------------------------------
-    const pitch = clamp(
+    let pitch = clamp(
       m.pitch + this.recoilPitch.value + this.kickPitch.value + breathPitch +
         this.bobPitch + shakePitch + mantlePitch,
       -CAMERA.pitchLimit,
       CAMERA.pitchLimit
     );
-    const yaw = m.yaw + this.recoilYaw.value + this.kickYaw.value + breathYaw + shakeYaw;
-    const roll =
+    let yaw = m.yaw + this.recoilYaw.value + this.kickYaw.value + breathYaw + shakeYaw;
+    let roll =
       this.strafeRoll + this.turnRoll + this.slideRoll + this.airRoll +
       this.bobRoll + this.recoilRoll.value + this.kickRoll.value + shakeRoll +
       mantleRoll - m.leanAmount * MOVE.lean.roll;
+
+    pitch -= death * 0.22;
+    yaw += this.deathSide * death * 0.06;
+    roll += this.deathSide * death * 1.08;
 
     this.rotation.set(pitch, yaw, roll);
 
@@ -302,7 +328,7 @@ export class CameraRig {
     else if (m.sprinting) moveTarget = F.sprint;
     else if (!m.grounded && m.velocity.y < -6) moveTarget = F.air;
     this.fovMove = approach(this.fovMove, moveTarget, F.moveTau, dt);
-    this.fovAds = approach(this.fovAds, lerp(1, cfg.adsFovScale, ads), F.adsTau, dt);
+    this.fovAds = approach(this.fovAds, lerp(1, m.adsFovScale, ads), F.adsTau, dt);
     this.baseFov = cfg.fov;
     this.fov = this.baseFov * this.fovMove * this.fovAds;
 

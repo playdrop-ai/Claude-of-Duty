@@ -1,8 +1,9 @@
 /**
  * The movement state machine.
  *
- * Runs at the fixed 120 Hz step so the feel is framerate-independent and
- * reproducible in capture mode. Collision is *entirely* delegated to
+ * Runs at the platform's fixed simulation cadence so the feel is
+ * framerate-independent and reproducible in capture mode. Collision is
+ * *entirely* delegated to
  * `physics.createCharacter()` — this file only ever owns velocity and asks the
  * controller to resolve a displacement.
  *
@@ -56,8 +57,12 @@ export class Movement {
     this.yawRate = 0;
 
     // ---- externally driven ---------------------------------------------
-    /** 0..1 aim-down-sight blend. `weapons` may drive this via setAdsProgress. */
+    /** Active weapon handling, driven once per frame by `weapons`. */
     this.adsAmount = 0;
+    this.adsFovScale = ctx.config.adsFovScale;
+    this.weaponMoveScale = 1;
+    this.weaponSprintScale = 1;
+    this.weaponAdsMoveScale = MOVE.adsScale;
     this.controlEnabled = true;
 
     // ---- lean ----------------------------------------------------------
@@ -73,6 +78,7 @@ export class Movement {
     this._jumpBuffer = 0;
     this._jumpCooldown = 0;
     this._sprintHoldTime = 0;
+    this._sprintBlock = 0;
     this._lastSprintPress = -10;
     this._tacSprintTime = 0;
     this._tacSprintLock = 0;
@@ -204,14 +210,14 @@ export class Movement {
     const jump = input.action('jump');
     const crouch = input.action('crouch');
     const prone = input.action('prone');
-    const sprint = input.action('sprint') || Math.abs(this.ctx.input.stick.moveY) > 0.92;
+    const sprint = input.action('sprint');
 
-    cmd.jump = jump && !prev.jump;
+    cmd.jump = input.actionPressed('jump') || (jump && !prev.jump);
     cmd.jumpHeld = jump;
-    cmd.crouchPressed = crouch && !prev.crouch;
-    cmd.pronePressed = prone && !prev.prone;
+    cmd.crouchPressed = input.actionPressed('crouch') || (crouch && !prev.crouch);
+    cmd.pronePressed = input.actionPressed('prone') || (prone && !prev.prone);
     cmd.sprintHeld = sprint;
-    cmd.sprintPressed = sprint && !prev.sprint;
+    cmd.sprintPressed = input.actionPressed('sprint') || (sprint && !prev.sprint);
     cmd.leanL = input.action('leanLeft');
     cmd.leanR = input.action('leanRight');
     cmd.ads = input.ads;
@@ -345,6 +351,7 @@ export class Movement {
     this._slideCooldown = Math.max(0, this._slideCooldown - h);
     this._mantleCooldown = Math.max(0, this._mantleCooldown - h);
     this._tacSprintLock = Math.max(0, this._tacSprintLock - h);
+    this._sprintBlock = Math.max(0, this._sprintBlock - h);
     this._footHold = Math.max(0, this._footHold - h);
     this._ledgeProbeTimer = Math.max(0, this._ledgeProbeTimer - h);
     this._leanProbeTimer = Math.max(0, this._leanProbeTimer - h);
@@ -408,6 +415,7 @@ export class Movement {
       forwardIntent > MOVE.sprintForwardDot &&
       this.stance === 'stand' &&
       !this.sliding &&
+      this._sprintBlock <= 0 &&
       this.adsAmount < 0.3 &&
       (c.grounded || this.sprinting);
 
@@ -617,10 +625,10 @@ export class Movement {
   targetSpeed() {
     let base;
     if (this.sprinting) {
-      base = this.tacticalSprint ? MOVE.tacSprintSpeed : MOVE.sprintSpeed;
+      base = (this.tacticalSprint ? MOVE.tacSprintSpeed : MOVE.sprintSpeed) * this.weaponSprintScale;
     } else {
-      base = STANCE[this.stance].speed;
-      base *= lerp(1, MOVE.adsScale, clamp01(this.adsAmount));
+      base = STANCE[this.stance].speed * this.weaponMoveScale;
+      base *= lerp(1, this.weaponAdsMoveScale, clamp01(this.adsAmount));
     }
     base *= lerp(1, 0.6, clamp01(Math.abs(this.leanAmount)));
     return base;
@@ -955,6 +963,15 @@ export class Movement {
   /* external control                                                     */
   /* ==================================================================== */
 
+  blockSprint(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) throw new Error(`Invalid sprint block: ${seconds}`);
+    this._sprintBlock = Math.max(this._sprintBlock, seconds);
+    this._sprintHoldTime = 0;
+    this.sprinting = false;
+    this.tacticalSprint = false;
+    this._tacSprintRequested = false;
+  }
+
   teleport(x, y, z) {
     if (!this.character) return;
     this.mantleMotion.end();
@@ -979,8 +996,17 @@ export class Movement {
     this._bobPhase = 0;
     this._footHold = 0;
     this._jumpBuffer = 0;
+    this.speed = this.horizontalSpeed = this.yawRate = 0;
+    this._coyote = this._jumpCooldown = this._sprintHoldTime = this._sprintBlock = 0;
+    this._tacSprintTime = this._tacSprintLock = this._slideTime = this._slideCooldown = 0;
+    this._mantleCooldown = this._ledgeProbeTimer = this._leanProbeTimer = 0;
+    this._lastSprintPress = -10;
+    this._tacSprintRequested = this.jumped = this.slideStarted = this.slideEnded = false;
+    this._cmdFrame = this._edgeFrame = -1;
+    for (const key of Object.keys(this._prevHeld)) this._prevHeld[key] = false;
     this.landEvent.pending = false;
     this.stepEvent.pending = false;
+    this.mantleEvent.pending = false;
     this._setState('stand');
   }
 

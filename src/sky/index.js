@@ -115,7 +115,7 @@ const NIGHT_AMBIENT_HUE = [0.35, 0.5, 1.0];
  *
  *   whole frame with the sky and volumetrics   10.1 - 11.8 ms
  *   sky dome only, volumetrics off             ~0.9 ms of that
- *   volumetric chain (56 steps @ half res)     ~1.5 ms of that
+ *   volumetric chain (32 steps @ quarter res)  ~1.5 ms of that
  *
  * The LUTs, the ambient probe and the PMREM only run when the sun has moved
  * more than 0.35 degrees, so a frozen time of day pays none of that. With
@@ -327,11 +327,11 @@ export class SkySystem {
     this.envMap = null;
 
     // ---- volumetrics ------------------------------------------------------
-    const steps = q.volumetrics ? (ctx.config.quality === 'ultra' ? 56 : q.ssr ? 44 : 28) : 0;
+    const steps = q.volumetrics ? (ctx.config.quality === 'ultra' ? 32 : q.ssr ? 30 : 24) : 0;
     this.volumetrics = new Volumetrics(this.shared, r, {
       volumetrics: q.volumetrics,
       steps: Math.max(8, steps),
-      scale: 0.5,
+      scale: 0.25,
     });
     this._unregisterPass = r.registerPass(this.volumetrics);
 
@@ -363,7 +363,7 @@ export class SkySystem {
 
     console.info(
       `[sky] atmosphere ready · lat ${this.celestial.site.latitudeDeg} · ` +
-        `vol ${q.volumetrics ? steps + ' steps @1/2' : 'analytic'} · ` +
+        `vol ${q.volumetrics ? steps + ' steps @1/4' : 'analytic'} · ` +
         `1 unit = ${SCENE_LUX} lx`
     );
   }

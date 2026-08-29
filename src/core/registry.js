@@ -6,7 +6,7 @@
  *   static deps    : string[] of subsystem ids that must init first.
  *   async init(ctx): build resources. May await asset loads.
  *   update(dt,ctx) : variable-rate, once per frame, before render.
- *   fixedUpdate(h,ctx): fixed-rate (PHYSICS_HZ), 0..N times per frame. Optional.
+ *   fixedUpdate(h,ctx): device-profile fixed rate, 0..N times per frame. Optional.
  *   lateUpdate(dt,ctx): after all update(), before render. Optional.
  *   resize(w,h,ctx): viewport changed. Optional.
  *   dispose()      : free GPU/CPU resources. Optional.

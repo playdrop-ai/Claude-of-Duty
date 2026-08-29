@@ -406,14 +406,27 @@ export const SET_PIECES = {
     [5.9, -24.0, Math.PI / 2],
     [-5.9, -36.0, -Math.PI / 2],
   ],
-  /** Overhead cable spans: [x0, y0, z0, x1, y1, z1, sag] */
+  /**
+   * Cable supports: at = crossarm centre; mast = slab Y; wall = facade X.
+   * West upper floors are set back, so their supports stand on the actual roof
+   * or terrace, not the street line. Masts clear parapets and roof clutter;
+   * wall racks mount on solid piers, above window openings. Match buildings.js
+   * if these footprints/heights change. Both wires use the support's insulators.
+   */
   cables: [
-    [-6.4, 7.2, 10.0, 6.4, 6.6, 12.5, 1.1],
-    [-6.4, 8.4, -2.0, 6.4, 7.9, -0.5, 1.4],
-    [-6.4, 6.2, -16.0, 6.4, 6.6, -14.5, 1.0],
-    [-6.4, 7.6, -30.0, 6.4, 7.2, -28.0, 1.2],
-    [-6.4, 5.4, 19.0, -6.4, 5.6, 24.5, 0.6],
-    [6.4, 5.6, 2.0, 6.4, 5.4, 8.0, 0.7],
+    // W1 roof -> E1 street wall, over the near market
+    { a: { at: [-9.8, 8.0, 11.0], mast: 6.5 }, b: { at: [6.25, 6.2, 11.2], wall: 6.5 }, sag: 1.1 },
+    // W2 roof -> E2, the high one: it lands under E2's eaves, not on its windows
+    { a: { at: [-9.6, 8.4, -2.0], mast: 6.5 }, b: { at: [6.25, 9.25, -0.8], wall: 6.5 }, sag: 1.4 },
+    // W3 -> E3. Both of these are ruins whose top storey is a ragged wall, so
+    // both ends go on the roof deck, which survives, instead of the facade.
+    { a: { at: [-7.2, 8.1, -16.0], mast: 6.5 }, b: { at: [7.2, 7.9, -15.0], mast: 6.5 }, sag: 1.0 },
+    // W4 roof -> E3 roof, the far span down the vista
+    { a: { at: [-10.0, 8.2, -30.0], mast: 6.5 }, b: { at: [7.2, 7.9, -28.0], mast: 6.5 }, sag: 1.2 },
+    // along the west kerb: terrace mast to terrace mast across the near alley
+    { a: { at: [-7.6, 5.4, 19.0], mast: 3.45 }, b: { at: [-7.6, 5.6, 24.5], mast: 3.45 }, sag: 0.6 },
+    // along the east kerb: racks on the two corners either side of the alley
+    { a: { at: [6.25, 5.6, 1.85], wall: 6.5 }, b: { at: [6.25, 5.4, 8.15], wall: 6.5 }, sag: 0.7 },
   ],
   /** Laundry lines with hanging cloth: [x0, y0, z0, x1, y1, z1] */
   laundry: [

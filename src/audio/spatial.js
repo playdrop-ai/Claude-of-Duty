@@ -60,6 +60,7 @@ class Emitter {
     this.priority = 0;
     this.busName = 'foley';
     this.attached = null;
+    this.stop = null;
     this.tracked = false;
     this.pos = { x: 0, y: 0, z: 0 };
     this._connected = false;
@@ -104,6 +105,8 @@ class Emitter {
   }
 
   detach() {
+    this.stop?.();
+    this.stop = null;
     if (this._connected) {
       try { this.panner.disconnect(this._connected); } catch { /* noop */ }
       this._connected = false;
@@ -150,6 +153,11 @@ export class SpatialField {
     this._occOrigin = { x: 0, y: 0, z: 0 };
     this._occDir = { x: 0, y: 0, z: 0 };
     this._trackCursor = 0;
+    this._listenerValues = new Float64Array(9).fill(NaN);
+    const l = actx.listener;
+    this._listenerParams = [l.positionX, l.positionY, l.positionZ, l.forwardX,
+      l.forwardY, l.forwardZ, l.upX, l.upY, l.upZ];
+    this._listenerNext = new Float64Array(9);
     this.stats = { active: 0, stolen: 0, dropped: 0, occlusionRays: 0 };
     this.occlusionEnabled = true;
   }
@@ -160,17 +168,15 @@ export class SpatialField {
     const t = this.actx.currentTime;
     this._lp.x = px; this._lp.y = py; this._lp.z = pz;
     if (l.positionX) {
-      // setTargetAtTime rather than a hard set: the doppler-free smoothing kills
-      // the zipper noise you otherwise get from a 60 Hz position update.
-      l.positionX.setTargetAtTime(px, t, 0.02);
-      l.positionY.setTargetAtTime(py, t, 0.02);
-      l.positionZ.setTargetAtTime(pz, t, 0.02);
-      l.forwardX.setTargetAtTime(fx, t, 0.02);
-      l.forwardY.setTargetAtTime(fy, t, 0.02);
-      l.forwardZ.setTargetAtTime(fz, t, 0.02);
-      l.upX.setTargetAtTime(ux, t, 0.05);
-      l.upY.setTargetAtTime(uy, t, 0.05);
-      l.upZ.setTargetAtTime(uz, t, 0.05);
+      const next = this._listenerNext;
+      next[0] = px; next[1] = py; next[2] = pz;
+      next[3] = fx; next[4] = fy; next[5] = fz;
+      next[6] = ux; next[7] = uy; next[8] = uz;
+      for (let i = 0; i < 9; i++) {
+        if (next[i] === this._listenerValues[i]) continue;
+        this._listenerValues[i] = next[i];
+        this._listenerParams[i].setTargetAtTime(next[i], t, i < 6 ? 0.02 : 0.05);
+      }
     } else {
       l.setPosition(px, py, pz);
       l.setOrientation(fx, fy, fz, ux, uy, uz);
@@ -273,6 +279,11 @@ export class SpatialField {
     em.busName = opts.bus ?? 'foley';
     em.tracked = !!opts.tracked;
     em.userGain = opts.gain ?? 1;
+    // A stolen delayed voice must not later move or muffle its replacement.
+    for (const param of [em.panner.positionX, em.panner.positionY, em.panner.positionZ,
+      em.airLP.frequency, em.occLP.frequency, em.occHS.gain, em.distGain.gain, em.sendGain.gain]) {
+      param?.cancelScheduledValues(now);
+    }
     em._setPos(opts.x, opts.y, opts.z, t);
 
     // Air absorption + occlusion filtering.
@@ -305,10 +316,11 @@ export class SpatialField {
   }
 
   /** Hand a voice's top node to an emitter and set its teardown time. */
-  hold(em, node, endTime) {
+  hold(em, node, endTime, stop) {
     node.connect(em.input);
     em.attached = node;
     em.endTime = endTime;
+    em.stop = stop;
   }
 
   update(dt) {

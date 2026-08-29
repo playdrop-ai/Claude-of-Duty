@@ -153,7 +153,7 @@ function nearestWall(x, z) {
 export function registerDressingProps(A, rng) {
   const P = (id, key, geo, opts = {}) => A.proto(id, { geo, key, ...opts });
 
-  P('wreck', 'metal_dark', burntCar(rng), { chunk: false });
+  P('wreck', 'metal_dark', burntCar(rng), { chunk: false, collide: true });
 
   // A wheel still on the hub of a wreck — flat tyre, exposed rim.
   P(
@@ -170,7 +170,8 @@ export function registerDressingProps(A, rng) {
       g.computeVertexNormals();
       fillMasks(g, 0.3, 0.6, 0.2);
       return g;
-    })()
+    })(),
+    { collide: true }
   );
 
   // Broken glass fan under a blown-out window.
@@ -300,13 +301,22 @@ export function registerDressingProps(A, rng) {
           list.push(leg);
         }
       const g = mergeSimple(list);
+      let start = 0, indexStart = 0;
+      g.userData.parts = list.map((part) => {
+        const count = part.getAttribute('position').count;
+        const range = { start, count, indexStart, indexCount: part.index?.count ?? count };
+        start += range.count;
+        indexStart += range.indexCount;
+        return range;
+      });
       for (const p of list) p.dispose();
       paintMasks(g, (x, y, z, nx, ny, nz, out) => {
         out[0] = 0.8;
         out[1] = 0.3 + Math.max(0, -ny) * 0.4;
       });
       return g;
-    })()
+    })(),
+    { breakable: 45, collideParts: true }
   );
   return A;
 }
@@ -584,7 +594,6 @@ function streetFloor(A, rng) {
   if (camClear(car[0], car[1], 2.6)) {
     const y = groundY(car[0], car[1]);
     A.put('wreck', car[0], y + 0.02, car[1], car[2], 1, [1, 0.85, 1]);
-    A.box('metal', car[0], y + 0.75, car[1], 1.85, 1.5, 4.4, car[2]);
     // it has been sitting long enough to gather its own drift and shed a wheel
     const dg = driftBerm(rng, 4.2, 0.7, 0.13, { nz: 3 });
     A.addOnce('sand', dg, LL(IDENT, car[0] - 1.0, y + 0.005, car[1], car[2] + Math.PI / 2, 1, 1, 1), {
@@ -700,7 +709,6 @@ function streetFloor(A, rng) {
           1,
         ]);
       }
-      A.box('wood', px, y + (n * 0.135) / 2, pz, 1.2, n * 0.135, 0.9);
       A.put('crate_b', px + 0.75, y, pz + 0.5, rng.float() * 6.28, 1, [1, 1.3, 1]);
       groundSkirt(A, rng, px, y, pz, 0.72, { pebbles: rng.int(3, 6) });
     }
@@ -712,6 +720,9 @@ function marketStalls(A, rng) {
   const CANOPY = ['fabric_red', 'fabric_teal', 'fabric_cream'];
   for (const [x, z, ry0, w] of SET_PIECES.stalls) {
     const y = groundY(x, z);
+    // The frame, canopy and stock on the table collapse together. Nearby
+    // floor clutter is independent, and the ground dressing stays put.
+    A.beginBreakable('stall', 85);
     const s = w / 2.3;
     // Per-instance: the same module four times down one street is only a repeat
     // if nothing about it changes. Yaw, depth, canopy tension, colour, whether
@@ -722,14 +733,16 @@ function marketStalls(A, rng) {
       rng.range(0.8, 1.35),
       1,
     ]);
-    // collision: the table volume plus the two post lines
-    A.box('wood', x, y + 0.45, z, w, 0.9, 1.05, ry);
-    // the legs stand IN something: dust and swept grit at each post line
+    // Ground dressing is not a piece of the frame. Keep generation in its
+    // original order so this change does not reshuffle the seeded level.
+    const stallGroup = A._breakable;
+    A._breakable = null;
     for (const t of [-0.42, 0.42]) {
       groundSkirt(A, rng, x + Math.cos(ry) * w * t, y, z - Math.sin(ry) * w * t, 0.4, {
         pebbles: rng.int(2, 5),
       });
     }
+    A._breakable = stallGroup;
 
     // canopy: striped cloth draped over the crossbars, sagging between posts.
     // Tension varies per stall — a tarp that has been up for a year hangs very
@@ -813,7 +826,8 @@ function marketStalls(A, rng) {
         );
       }
     }
-    // crates and sacks stuffed underneath and alongside
+    A.endBreakable();
+    // Crates and sacks underneath and alongside do not vanish with the frame.
     for (let i = 0; i < rng.int(2, 5); i++) {
       const lx = rng.range(-w / 2, w / 2);
       const lz = rng.range(-0.3, 0.3);
@@ -1034,7 +1048,6 @@ function wrecks(A, rng) {
   for (const [x, z, ry, roll] of SET_PIECES.wrecks) {
     const y = groundY(x, z);
     A.put('wreck', x, y + 0.02, z, ry, 1, [1, 1, 1], 0, (roll * Math.PI) / 180);
-    A.box('metal', x, y + 0.75, z, 1.85, 1.5, 4.4, ry);
     // wheels: two flat, one missing, the hub resting on a block
     const wheelPos = [
       [0.86, 1.35],
@@ -1165,26 +1178,111 @@ function streetLamps(A, rng) {
 }
 
 // --- cables, laundry --------------------------------------------------------
-function overheadLines(A, rng) {
-  const insulator = (x, y, z) => {
-    A.add('concrete_dark', BOX_FINE(A), LL(IDENT, x, y, z, 0, 0.1, 0.16, 0.1), {
-      masks: [0.6, 0.5, 0.2],
+/** A pin insulator: the spindle it screws onto, and the pot the wire ties into. */
+function insulator(A, x, y, z) {
+  A.add('metal_dark', BOX_THIN(A), LL(IDENT, x, y - 0.12, z, 0, 0.03, 0.14, 0.03), {
+    masks: [0.55, 0.55, 0.2],
+  });
+  A.add('concrete_dark', BOX_FINE(A), LL(IDENT, x, y - 0.02, z, 0, 0.1, 0.16, 0.1), {
+    masks: [0.6, 0.5, 0.2],
+  });
+}
+
+/** A member running from `a` to `b`, as a box on the line between them. */
+function strut(A, key, a, b, t, masks) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const flat = Math.hypot(dx, dz);
+  A.add(
+    key,
+    BOX_THIN(A),
+    LL(
+      IDENT,
+      (a[0] + b[0]) / 2,
+      (a[1] + b[1]) / 2,
+      (a[2] + b[2]) / 2,
+      Math.atan2(-dz, dx),
+      Math.hypot(flat, dy),
+      t,
+      t,
+      0,
+      Math.atan2(dy, flat)
+    ),
+    { masks }
+  );
+}
+
+/** Returns both wire anchors. bx,bz points behind the mast for its stay.
+ * Keep this deterministic: consuming rng would reshuffle later street props. */
+function cableSupport(A, s, ux, uz, bx, bz) {
+  const [x, y, z] = s.at;
+  if ((s.mast === undefined) === (s.wall === undefined)) throw new Error('Cable support requires exactly one mast or wall mount');
+  const steel = [0.5, 0.55, 0.2];
+  // A rack whose wall runs WITH the wire has nowhere to put a crossarm — the
+  // arm would go straight into the facade — so it stacks its insulators.
+  const stacked = s.wall !== undefined && Math.abs(ux) > 0.5;
+  const arm = 0.32; // half the crossarm: the gap between the two wires
+  const e0 = stacked ? [x, y, z] : [x - ux * arm, y, z - uz * arm];
+  const e1 = stacked ? [x, y - 0.3, z] : [x + ux * arm, y, z + uz * arm];
+
+  if (s.mast !== undefined) {
+    const base = s.mast;
+    A.addOnce('metal_dark', tubeY(0.05, y - base - 0.08, { radial: 6, taper: 0.8 }), LL(IDENT, x, base, z), {
+      masks: steel,
     });
-  };
-  for (const [x0, y0, z0, x1, y1, z1, sag] of SET_PIECES.cables) {
-    const t = catenaryTube([x0, y0, z0], [x1, y1, z1], sag, 0.022, { seg: 14, radial: 4, jitter: 0.05 });
+    // the foot plate that puts the load on the slab, and a stay taking the pull
+    A.add('metal_dark', BOX_THIN(A), LL(IDENT, x, base + 0.03, z, 0, 0.3, 0.06, 0.3), {
+      masks: [0.6, 0.8, 0.45],
+    });
+    const sy = base + (y - base) * 0.58;
+    strut(A, 'metal_dark', [x, sy, z], [x + bx * 0.85, base + 0.05, z + bz * 0.85], 0.05, steel);
+    A.add('metal_dark', BOX_THIN(A), LL(IDENT, x + bx * 0.85, base + 0.03, z + bz * 0.85, 0, 0.16, 0.06, 0.16), {
+      masks: [0.6, 0.8, 0.45],
+    });
+  } else {
+    // Bolted to the wall: a back plate flush on the facade, and a stub arm out
+    // to each insulator. The plate is set 1 cm INTO the render so there is no
+    // seam of daylight between the fixing and the wall it is fixed to.
+    const out = Math.sign(x - s.wall);
+    const px = s.wall + out * 0.02;
+    A.add(
+      'metal_dark',
+      BOX_THIN(A),
+      LL(IDENT, px, stacked ? y - 0.15 : y - 0.1, z, 0, 0.06, stacked ? 0.62 : 0.42, 0.2),
+      { masks: [0.65, 0.7, 0.4] }
+    );
+    for (const e of stacked ? [e0, e1] : [e0]) {
+      strut(A, 'metal_dark', [px, e[1] - 0.14, z], [x, e[1] - 0.14, z], 0.055, steel);
+    }
+  }
+  if (!stacked) {
+    // the crossarm the two insulators stand on
+    strut(A, 'metal_dark', [e0[0], y - 0.14, e0[2]], [e1[0], y - 0.14, e1[2]], 0.07, steel);
+  }
+  insulator(A, e0[0], e0[1], e0[2]);
+  insulator(A, e1[0], e1[1], e1[2]);
+  return [e0, e1];
+}
+
+/** Six power spans, with both cables attached to their actual supports. */
+function overheadLines(A, rng) {
+  for (const { a, b, sag } of SET_PIECES.cables) {
+    const dx = b.at[0] - a.at[0];
+    const dz = b.at[2] - a.at[2];
+    const length = Math.hypot(dx, dz);
+    if (!(length > 0)) throw new Error('Cable supports must have distinct horizontal positions');
+    const inv = 1 / length;
+    // crossarm axis: horizontal, square to the run
+    const ux = -dz * inv;
+    const uz = dx * inv;
+    const [p0, q0] = cableSupport(A, a, ux, uz, -dx * inv, -dz * inv);
+    const [p1, q1] = cableSupport(A, b, ux, uz, dx * inv, dz * inv);
+    const t = catenaryTube(p0, p1, sag, 0.022, { seg: 14, radial: 4, jitter: 0.05 });
     A.addOnce('metal_dark', t, null, { masks: [0.4, 0.7, 0.2] });
     // a second, thinner line running with it — never one lonely wire
-    const t2 = catenaryTube(
-      [x0, y0 - 0.22, z0 + 0.18],
-      [x1, y1 - 0.18, z1 + 0.2],
-      sag * 1.12,
-      0.014,
-      { seg: 14, radial: 4, jitter: 0.06 }
-    );
+    const t2 = catenaryTube(q0, q1, sag * 1.12, 0.014, { seg: 14, radial: 4, jitter: 0.06 });
     A.addOnce('metal_dark', t2, null, { masks: [0.4, 0.7, 0.2] });
-    insulator(x0, y0 + 0.06, z0);
-    insulator(x1, y1 + 0.06, z1);
   }
 
   const SAG = 0.42;
@@ -1377,12 +1475,13 @@ function coverClusters(A, rng) {
     const bx = x + Math.cos(ry + 1.57) * 1.5;
     const bz = z - Math.sin(ry + 1.57) * 1.5;
     if (isOpen(bx, bz, 0.4)) {
-      A.put(rng.pick(['crate_c', 'barrel_rust', 'block_small']), bx, groundY(bx, bz), bz, rng.float() * 6.28, 1, [
+      const id = rng.pick(['crate_c', 'barrel_rust', 'block_small']);
+      A.put(id, bx, groundY(bx, bz), bz, rng.float() * 6.28, 1, [
         1,
         1.2,
         1,
       ]);
-      A.box('wood', bx, y + 0.4, bz, 0.8, 0.8, 0.8);
+      if (id !== 'crate_c') A.box(id === 'barrel_rust' ? 'metal' : 'concrete', bx, y + 0.4, bz, 0.8, 0.8, 0.8);
       groundSkirt(A, rng, bx, groundY(bx, bz), bz, 0.5, { pebbles: rng.int(3, 6) });
     }
     for (let i = 0; i < rng.int(3, 6); i++) {
@@ -1585,7 +1684,6 @@ function dressBuilding(A, rng, info) {
           [1, rng.range(1.0, 1.4), 1]
         );
       }
-      A.box('wood', px, roofY + n * 0.26, pz, 0.7, n * 0.53, 0.7);
     } else {
       A.put(
         rng.pick(['stool', 'chair', 'tyre', 'barrel_rust', 'pallet', 'gas_bottle']),
@@ -1808,7 +1906,6 @@ export function scatterDebris(A, rng) {
       ]);
       // big items get a collision box; scatter does not
       if (id.startsWith('barrel')) A.box('metal', x, y + 0.45, z, 0.62, 0.9, 0.62);
-      else if (id.startsWith('crate')) A.box('wood', x, y + 0.3, z, 0.62, 0.6, 0.62);
     }
     // a skip-load of rubble at one end of each alley
     if (rng.float() < 0.7) {

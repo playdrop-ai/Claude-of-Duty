@@ -285,6 +285,7 @@ export const PALETTE = {
   rubber: { name: 'rubber', surface: 'rubber', opts: { vertexMasks: true, scale: 0.45 } },
   glass: { name: 'glass', surface: 'glass', opts: { scale: 2.0 } },
   foliage: { name: 'foliage', surface: 'foliage', opts: { vertexMasks: true } },
+  palm_leaf: { name: 'palm_leaf', surface: 'foliage', opts: { vertexMasks: true } },
 
   // ------------------------------------------------------------- apertures --
   /**

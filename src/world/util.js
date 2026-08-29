@@ -659,6 +659,8 @@ export function patchGeometry(rng, radius, opts = {}) {
   }
   for (let i = 0; i < lobes; i++) idx.push(0, 1 + i, 1 + ((i + 1) % lobes));
   const g = new THREE.BufferGeometry();
+  // Surface stains/ruts are not solid occluders above the terrain.
+  g.userData.castShadow = false;
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -996,11 +998,13 @@ export function catenaryTube(from, to, sagAmt, radius, opts = {}) {
     const t = i / seg;
     // normalised catenary droop: 0 at the ends, 1 at mid-span
     const droop = (Math.cosh(1.5) - Math.cosh((t - 0.5) * 3)) / K;
+    // Taper wander to zero at both ends so the cable stays on its anchors.
+    const j = jitter * 4 * t * (1 - t);
     pts.push(
       new THREE.Vector3(
-        from[0] + (to[0] - from[0]) * t + (jitter ? (fbm3(i * 3.1, 1.2, 4.4, 2) - 0.5) * jitter : 0),
+        from[0] + (to[0] - from[0]) * t + (j ? (fbm3(i * 3.1, 1.2, 4.4, 2) - 0.5) * j : 0),
         from[1] + (to[1] - from[1]) * t - sagAmt * droop,
-        from[2] + (to[2] - from[2]) * t + (jitter ? (fbm3(i * 2.7, 8.2, 1.4, 2) - 0.5) * jitter : 0)
+        from[2] + (to[2] - from[2]) * t + (j ? (fbm3(i * 2.7, 8.2, 1.4, 2) - 0.5) * j : 0)
       )
     );
   }

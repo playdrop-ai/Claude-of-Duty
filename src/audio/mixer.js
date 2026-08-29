@@ -143,12 +143,7 @@ export class Mixer {
     for (const name of this.spaceNames) {
       const conv = actx.createConvolver();
       conv.normalize = false;
-      try {
-        conv.buffer = generateIR(actx, this.rng.fork(), IR_SPECS[name]);
-      } catch (err) {
-        console.warn('[audio] IR generation failed for', name, err);
-        continue;
-      }
+      conv.buffer = generateIR(actx, this.rng.fork(), IR_SPECS[name]);
       const g = gain(actx, this.spaceWeights[name] ?? 0);
       const live = (this.spaceWeights[name] ?? 0) > 0.012;
       if (live) this.sendLP.connect(conv);
@@ -197,6 +192,7 @@ export class Mixer {
    * starts floating back. Called on every gunshot and explosion.
    */
   duck(amount, hold = 0.12) {
+    if (!Number.isFinite(amount) || !Number.isFinite(hold)) return;
     const t = this.actx.currentTime;
     const apply = (name, scale) => {
       const b = this.buses[name];
@@ -318,7 +314,7 @@ export class Mixer {
     return this.masterComp.reduction ?? 0;
   }
 
-  dispose() {
+  _stopTinnitus() {
     if (this._tin) {
       for (const n of this._tin.nodes) {
         try { n.stop?.(); } catch { /* noop */ }
@@ -327,6 +323,27 @@ export class Mixer {
       this._tin.g.disconnect();
       this._tin = null;
     }
+  }
+
+  resetCombat() {
+    this._stopTinnitus();
+    this.deafness = 0;
+    const t = this.actx.currentTime;
+    for (const [param, value] of [
+      [this.muffleLP.frequency, 20000], [this.muffleHS.gain, 0], [this.muffleGain.gain, 1],
+    ]) {
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(value, t);
+    }
+    for (const bus of Object.values(this.buses)) {
+      bus.duckAmount = bus.duckHold = 0;
+      bus.duck.gain.cancelScheduledValues(t);
+      bus.duck.gain.setValueAtTime(1, t);
+    }
+  }
+
+  dispose() {
+    this._stopTinnitus();
     for (const name in this.spaces) {
       this.spaces[name].conv.disconnect();
       this.spaces[name].conv.buffer = null;

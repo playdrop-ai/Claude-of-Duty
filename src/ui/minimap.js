@@ -30,13 +30,16 @@ export class Minimap {
     el('div', 'ow-mm-n', this.root, 'N');
     const tag = el('div', 'ow-mm-tag', this.root);
     el('span', null, tag, 'ZONE 07');
-    this.scaleTag = el('span', null, tag, '60M');
+    this.scaleTag = el('span', null, tag, '130M');
 
     this.rng = rng;
     this.k = 1;
     this.cssSize = 178;
     this.span = 190; // metres covered by the bake
-    this.viewSpan = 60; // metres visible in the widget
+    // The opening garrison sits 52-61 m from the north-street spawn. Cover the
+    // complete engagement so those contacts are visible immediately instead of
+    // existing outside a tiny 30 m radar radius.
+    this.viewSpan = 130; // metres visible across the widget
     this.centre = new THREE.Vector2(0, 0);
 
     this.baked = null;
@@ -549,15 +552,19 @@ export class Minimap {
         const r = 3.4 * u;
         g.save();
         g.translate(dx, dy);
-        g.rotate(((b.heading ?? 0) * Math.PI) / 180);
         g.fillStyle = enemy ? 'rgba(255,74,58,.96)' : 'rgba(126,196,255,.95)';
         g.shadowColor = enemy ? 'rgba(255,60,40,.85)' : 'rgba(120,190,255,.7)';
         g.shadowBlur = 6 * u;
         g.beginPath();
-        g.moveTo(0, -r * 1.5);
-        g.lineTo(r * 1.15, r * 1.1);
-        g.lineTo(-r * 1.15, r * 1.1);
-        g.closePath();
+        if (enemy) {
+          g.arc(0, 0, r, 0, Math.PI * 2);
+        } else {
+          g.rotate(((b.heading ?? 0) * Math.PI) / 180);
+          g.moveTo(0, -r * 1.5);
+          g.lineTo(r * 1.15, r * 1.1);
+          g.lineTo(-r * 1.15, r * 1.1);
+          g.closePath();
+        }
         g.fill();
         g.restore();
       }

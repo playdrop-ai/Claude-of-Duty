@@ -234,6 +234,12 @@ export class ShellSystem {
     this.mesh.visible = count > 0;
   }
 
+  reset() {
+    for (const slot of this.slots) if (slot.alive) this._release(slot);
+    this.cursor = this._lastCount = this.mesh.count = 0;
+    this.mesh.visible = false;
+  }
+
   dispose() {
     for (const s of this.slots) if (s.alive) this._release(s);
     this.geometry.dispose();

@@ -44,6 +44,7 @@ export class DecalSystem {
     this.highWater = 0;
     this.expireAt = -1;
     this.count = 0;
+    this.owners = new Array(this.capacity).fill(null);
 
     this.pos = new Float32Array(this.maxVerts * 3);
     this.nrm = new Float32Array(this.maxVerts * 3);
@@ -246,6 +247,7 @@ export class DecalSystem {
     const bz = nx * ty - ny * tx;
 
     const slot = this.cursor;
+    this.owners[slot] = o.owner ?? null;
     this.cursor = slot + 1;
     if (this.cursor >= this.capacity) {
       this.cursor = 0;
@@ -376,7 +378,7 @@ export class DecalSystem {
     if (slot > this._dirtyHi) this._dirtyHi = slot;
     if (slot + 1 > this.highWater) this.highWater = slot + 1;
     if (birth + life > this.expireAt) this.expireAt = birth + life;
-    this.count++;
+    this.count = Math.min(this.capacity, this.count + 1);
     return wrote > 0;
   }
 
@@ -411,6 +413,25 @@ export class DecalSystem {
     const verts = (this._wrapped ? this.capacity : this.highWater) * this.vertsPerDecal;
     this.geometry.setDrawRange(0, verts);
     this.mesh.visible = verts > 0 && now < this.expireAt;
+  }
+
+  removeOwner(owner) {
+    for (let slot = 0; slot < this.capacity; slot++) {
+      if (this.owners[slot] !== owner) continue;
+      this.owners[slot] = null;
+      for (let vertex = slot * this.vertsPerDecal; vertex < (slot + 1) * this.vertsPerDecal; vertex++) this.dec[vertex * 4 + 3] = 0;
+      this._dirtyLo = Math.min(this._dirtyLo, slot);
+      this._dirtyHi = Math.max(this._dirtyHi, slot);
+    }
+  }
+
+  reset() {
+    this.cursor = this.highWater = this.count = 0;
+    this._wrapped = false;
+    this.expireAt = -1;
+    this.owners.fill(null);
+    this.geometry.setDrawRange(0, 0);
+    this.mesh.visible = false;
   }
 
   dispose() {
