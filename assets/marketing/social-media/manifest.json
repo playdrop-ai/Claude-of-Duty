@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "game": "Claude of Duty",
+  "subtitle": "The Original Gauntlet Loop FPS",
+  "approval": {
+    "status": "approved",
+    "scope": "The owner approved the exact main copy, first reply, and Matt Shumer creator trailer for public X publication.",
+    "preparedAt": "2026-08-29",
+    "approvedAt": "2026-08-29T18:18:16Z"
+  },
+  "destinationUrl": "https://www.playdrop.ai/@mattshumer_/claude_of_duty",
+  "attribution": {
+    "utm_medium": "organic_social",
+    "utm_campaign": "claude_of_duty_launch"
+  },
+  "source": {
+    "creatorPost": "https://x.com/mattshumer_/status/2081054356405731740",
+    "media": "../playdrop/video/creator-store-gameplay.mp4",
+    "mediaSha256": "b048370d3c941669e88984f0900288ca425f6d5de16f44b602edfbdaf7213bfd"
+  },
+  "x": {
+    "video": "../playdrop/video/creator-store-gameplay.mp4",
+    "copy": "Claude of Duty is exactly what it sounds like: a tactical FPS in your browser, made by @mattshumer_ with one smart prompt, Claude Opus 5 builders, and memory-isolated critics. No art assets.\nThe OG Gauntlet Loop game is now playable on PlayDrop.\nLink in the first reply.",
+    "linkReply": "Play Claude of Duty on PlayDrop:\nhttps://www.playdrop.ai/@mattshumer_/claude_of_duty?utm_source=x&utm_medium=organic_social&utm_campaign=claude_of_duty_launch&utm_content=trailer_reply",
+    "altText": "First-person gameplay from Claude of Duty in a sunlit procedural market. The player aims and fires a rifle while moving through streets and cover, takes incoming damage, and eliminates enemy soldiers.",
+    "pinPost": false
+  }
+}

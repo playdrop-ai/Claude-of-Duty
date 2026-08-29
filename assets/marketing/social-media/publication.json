@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "destinationUrl": "https://www.playdrop.ai/@mattshumer_/claude_of_duty",
+  "featuredPlacement": {
+    "status": "skipped",
+    "environment": "prod",
+    "collectionSlug": "featured",
+    "position": null,
+    "gameId": 1885,
+    "creatorUsername": "mattshumer_",
+    "appName": "claude_of_duty",
+    "ownerInstruction": "The owner explicitly requested position 1 in Around the Web for this campaign."
+  },
+  "aroundTheWebPlacement": {
+    "status": "verified",
+    "environment": "prod",
+    "collectionSlug": "around_the_web",
+    "position": 1,
+    "gameId": 1885,
+    "creatorUsername": "mattshumer_",
+    "appName": "claude_of_duty",
+    "evidenceUrl": "https://api.playdrop.ai/home/games/collections/around_the_web?limit=24&offset=0",
+    "verifiedAt": "2026-08-29T18:25:51Z"
+  },
+  "publications": [
+    {
+      "provider": "x",
+      "format": "native_video_post",
+      "status": "published",
+      "media": "../playdrop/video/creator-store-gameplay.mp4",
+      "copy": "Claude of Duty is exactly what it sounds like: a tactical FPS in your browser, made by @mattshumer_ with one smart prompt, Claude Opus 5 builders, and memory-isolated critics. No art assets.\nThe OG Gauntlet Loop game is now playable on PlayDrop.\nLink in the first reply.",
+      "publicUrl": "https://x.com/playdropai/status/2093766789360418904",
+      "publishedAt": "2026-08-29T18:24:37.546Z",
+      "utm": {
+        "source": "x",
+        "medium": "organic_social",
+        "campaign": "claude_of_duty_launch",
+        "content": "trailer"
+      },
+      "measurements": []
+    },
+    {
+      "provider": "x",
+      "format": "first_reply",
+      "status": "published",
+      "media": null,
+      "copy": "Play Claude of Duty on PlayDrop:\nhttps://www.playdrop.ai/@mattshumer_/claude_of_duty?utm_source=x&utm_medium=organic_social&utm_campaign=claude_of_duty_launch&utm_content=trailer_reply",
+      "publicUrl": "https://x.com/playdropai/status/2093766978951421957",
+      "publishedAt": "2026-08-29T18:25:22.748Z",
+      "utm": {
+        "source": "x",
+        "medium": "organic_social",
+        "campaign": "claude_of_duty_launch",
+        "content": "trailer_reply"
+      },
+      "measurements": []
+    }
+  ]
+}
