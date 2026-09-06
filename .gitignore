@@ -26,3 +26,6 @@ revcrops/
 # Listing review artifacts; final media remains tracked
 assets/marketing/playdrop/screenshots/review/
 assets/marketing/playdrop/video/review/
+
+# Local localization captures and review files
+output/localization/

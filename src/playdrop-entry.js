@@ -1,3 +1,4 @@
+import { setLocale, t } from './i18n/index.js';
 const boot = document.getElementById('boot');
 const status = document.getElementById('boot-status');
 const progress = document.getElementById('boot-progress');
@@ -5,6 +6,25 @@ const progressBar = document.getElementById('boot-progress-bar');
 const note = document.getElementById('boot-note');
 const canvas = document.getElementById('game');
 const rotateOverlay = document.getElementById('rotate-overlay');
+
+const fitBootTitle = () => {
+  const title = document.getElementById('boot-title');
+  if (!title || !document.documentElement.classList.contains('cjk') || !title.clientWidth) return;
+  title.style.fontSize = '';
+  if (title.scrollWidth > title.clientWidth) {
+    const size = parseFloat(getComputedStyle(title).fontSize);
+    title.style.fontSize = `${size * title.clientWidth / title.scrollWidth}px`;
+  }
+};
+addEventListener('resize', fitBootTitle);
+const localizeDocument = () => {
+  document.querySelectorAll('[data-i18n]').forEach(node => {
+    node.textContent = t(node.dataset.i18n, { title: t('title') });
+  });
+  progress?.setAttribute('aria-label', t('deploymentProgress'));
+  fitBootTitle();
+};
+
 const touchCapable = navigator.maxTouchPoints > 0;
 const bootAbort = new AbortController();
 const { signal } = bootAbort;
@@ -85,10 +105,10 @@ const waitForStart = () => new Promise((resolve, reject) => {
   boot.dataset.state = 'ready';
   boot.setAttribute('aria-busy', 'false');
   boot.setAttribute('role', 'button');
-  boot.setAttribute('aria-label', 'Start Claude of Duty');
+  boot.setAttribute('aria-label', t('startGame', { title: t('title') }));
   boot.tabIndex = 0;
-  setBootProgress('Deployment ready', 100);
-  if (note) note.textContent = 'Click anywhere to start';
+  setBootProgress(t('ready'), 100);
+  if (note) note.textContent = t('clickStart');
 
   // Keep the start click out of the gameplay input queue. Pointerdown is left
   // alone so the Web Audio gesture handler can unlock sound on the same action.
@@ -123,8 +143,8 @@ const waitForStart = () => new Promise((resolve, reject) => {
   const pollStart = () => {
     input.beginFrame(); // The engine is deliberately stopped at the ready gate.
     if (note) note.textContent = input.gamepad.connected
-      ? `Press ${input.gamepad.labels.confirm} to start · or click anywhere`
-      : touchCapable ? 'Tap anywhere to start' : 'Click anywhere to start';
+      ? t('controllerStart', { button: input.gamepad.labels.confirm })
+      : touchCapable ? t('tapStart') : t('clickStart');
     if (input.gamepad.pressed('confirm')) start();
     else pollFrame = requestAnimationFrame(pollStart);
   };
@@ -145,11 +165,11 @@ const showBootFailure = (error) => {
   boot.style.opacity = '1';
   boot.dataset.state = 'error';
   boot.setAttribute('role', 'alertdialog');
-  boot.setAttribute('aria-label', 'Game stopped. Restart Claude of Duty');
+  boot.setAttribute('aria-label', t('restartGame', { title: t('title') }));
   boot.setAttribute('aria-busy', 'false');
   boot.tabIndex = 0;
-  status.textContent = error.message;
-  note.textContent = 'Click anywhere or press Enter to restart';
+  status.textContent = error.code === 'graphics-context-lost' ? t('graphicsLost') : t('gameStopped');
+  note.textContent = t('restartHint');
   const restart = () => window.location.reload();
   boot.addEventListener('click', restart);
   boot.addEventListener('keydown', (event) => {
@@ -161,7 +181,9 @@ const showBootFailure = (error) => {
 };
 canvas.addEventListener('webglcontextlost', (event) => {
   event.preventDefault();
-  showBootFailure(new Error('Graphics context lost. Restart to rebuild the game.'));
+  const error = new Error(t('graphicsLost'));
+  error.code = 'graphics-context-lost';
+  showBootFailure(error);
 }, { once: true });
 
 const bindHostLifecycle = (sdk) => {
@@ -203,14 +225,16 @@ try {
   let hostReady = false;
 
   if (hostedByPlayDrop) {
-    setBootProgress('Connecting to PlayDrop', 5);
+    setBootProgress(t('connecting'), 5);
     performance.mark('playdrop:init:start');
     const playdrop = await loadPlayDropSdk();
     sdk = await playdrop.init();
+    setLocale(sdk.host.locale);
+    localizeDocument();
     performance.mark('playdrop:init:end');
     performance.measure('playdrop:init', 'playdrop:init:start', 'playdrop:init:end');
     window.__PLAYDROP_AUDIO_ENABLED__ = sdk.host.audioEnabled;
-    setBootProgress('Generating combat environment', 8);
+    setBootProgress(t('generating'), 8);
 
     // Reveal loading for interactive play. Capture/profile/preview still require
     // the first gameplay frame before the host removes its poster.
@@ -221,8 +245,10 @@ try {
       hostReady = true;
     }
   } else {
+    setLocale('en');
+    localizeDocument();
     window.__PLAYDROP_AUDIO_ENABLED__ = true;
-    setBootProgress('Generating combat environment', 8);
+    setBootProgress(t('generating'), 8);
   }
 
   await import('./main.js');
@@ -231,7 +257,7 @@ try {
   const requiresStart = params.get('capture') !== '1' && params.get('profile') !== '1' && sdk?.host?.phase !== 'preview';
   if (requiresStart) window.__ENGINE__.stop();
   if (touchCapable) {
-    setBootProgress('Preparing touch controls', 99);
+    setBootProgress(t('touchPreparing'), 99);
     const { TouchControls } = await import('./ui/touch.js');
     // Standalone bundles NippleJS; hosted play must use the SDK-pinned runtime.
     const nipplejs = sdk ? await sdk.libs.nipplejs.load() : (await import('nipplejs')).default;
@@ -248,7 +274,7 @@ try {
   } else {
     window.__PLAYDROP_STARTED__ = true;
     if (!hostReady) sdk?.host?.ready();
-    setBootProgress('Deployment ready', 100);
+    setBootProgress(t('ready'), 100);
   }
   boot.style.opacity = '0';
   await new Promise((resolve) => setTimeout(resolve, 340));

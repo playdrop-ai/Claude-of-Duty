@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { el, setText, setStyle, setClass } from './util.js';
 import './touch.css';
 
@@ -26,7 +27,7 @@ export class TouchControls {
     this.weapons = ui.ctx.peek('weapons');
     this.root = el('div', 'ow-touch', ui.root);
     this.root.dataset.touchUi = '';
-    this.root.setAttribute('aria-label', 'Touch controls');
+    this.root.setAttribute('aria-label', t('touchControls'));
     this.input.inputMethod = 'touch';
     this.buttons = new Map();
     this.pointers = new Map();
@@ -40,7 +41,7 @@ export class TouchControls {
     }
 
     this.lookZone = el('div', 'ow-touch-look', this.root);
-    this.lookZone.setAttribute('aria-label', 'Swipe to look');
+    this.lookZone.setAttribute('aria-label', t('swipeLook'));
     this.lookZone.addEventListener('pointerdown', e => this.beginLook(e));
     this.lookZone.addEventListener('pointermove', e => this.moveLook(e));
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
@@ -48,12 +49,12 @@ export class TouchControls {
     }
 
     this.stickZone = el('div', 'ow-touch-move', this.root);
-    this.stickZone.setAttribute('aria-label', 'Move joystick. Push past the ring to sprint.');
+    this.stickZone.setAttribute('aria-label', t('joystick'));
     this.createJoystick();
 
     for (const [action, label] of [
-      ['ads', 'Aim'], ['jump', 'Jump'], ['crouch', 'Crouch'],
-      ['grenade', 'Grenade'], ['pause', 'Pause'],
+      ['ads', t('aim')], ['jump', t('jump')], ['crouch', t('crouch')],
+      ['grenade', t('grenade')], ['pause', t('pause')],
     ]) this.addButton(action, label);
     this.grenadeCount = el('span', 'ow-touch-count', this.buttons.get('grenade'), '2');
     this.buildLoadout();
@@ -100,7 +101,7 @@ export class TouchControls {
   buildLoadout() {
     const loadout = el('div', 'ow-touch-loadout', this.root);
     loadout.setAttribute('role', 'group');
-    loadout.setAttribute('aria-label', 'Weapons. Tap the equipped weapon to reload.');
+    loadout.setAttribute('aria-label', t('weaponsHint'));
     this.weaponSlots = this.weapons.weaponIds.map((id, index) => {
       const action = `weapon${index + 1}`;
       const label = this.weapons.states.get(id).def.label;
@@ -148,7 +149,7 @@ export class TouchControls {
       setClass(slot.button, 'selected', active);
       setClass(slot.button, 'reloading', active && state.reloading);
       slot.button.setAttribute('aria-pressed', String(active));
-      slot.button.setAttribute('aria-label', active ? `${slot.label}. Tap to reload.` : `Equip ${slot.label}`);
+      slot.button.setAttribute('aria-label', active ? t('tapReload', { weapon: slot.label }) : t('equip', { weapon: slot.label }));
       if (!active) continue;
       setText(slot.rounds, state.ammo);
       setText(slot.reserve, `/ ${state.reserve}`);
@@ -183,7 +184,7 @@ export class TouchControls {
   addButton(action, label) {
     const button = el('button', `ow-touch-button ow-touch-${action}`, this.root);
     button.type = 'button';
-    button.setAttribute('aria-label', action === 'crouch' ? 'Crouch. Hold for prone.' : label);
+    button.setAttribute('aria-label', action === 'crouch' ? t('crouchProne') : label);
     button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[action]}</svg>`;
     this.buttons.set(action, button);
     button.addEventListener('pointerdown', e => {
@@ -245,7 +246,7 @@ export class TouchControls {
     const player = this.ui.ctx.peek('player');
     const stance = player?.movement?.stance;
     this.buttons.get('crouch').setAttribute('aria-pressed', String(stance === 'crouch' || stance === 'prone'));
-    this.buttons.get('crouch').setAttribute('aria-label', stance === 'prone' ? 'Crouch. Hold to leave prone.' : stance === 'crouch' ? 'Stand. Hold for prone.' : 'Crouch. Hold for prone.');
+    this.buttons.get('crouch').setAttribute('aria-label', stance === 'prone' ? t('leaveProne') : stance === 'crouch' ? t('standProne') : t('crouchProne'));
     this.stickZone.classList.toggle('sprinting', this.touch.held('sprint'));
     const count = this.ui.ctx.peek('weapons')?.getHudState().lethalCount ?? 0;
     setText(this.grenadeCount, count);

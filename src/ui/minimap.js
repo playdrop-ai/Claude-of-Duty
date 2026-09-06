@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import * as THREE from 'three';
 import { el, clamp, clamp01, lerp } from './util.js';
 
@@ -27,9 +28,9 @@ export class Minimap {
     this.canvas = el('canvas', null, this.root);
     this.g = this.canvas.getContext('2d');
     for (const c of ['tl', 'tr', 'bl', 'br']) el('div', 'ow-mm-corner ' + c, this.root);
-    el('div', 'ow-mm-n', this.root, 'N');
+    el('div', 'ow-mm-n', this.root, t('north'));
     const tag = el('div', 'ow-mm-tag', this.root);
-    el('span', null, tag, 'ZONE 07');
+    el('span', null, tag, t('zone', { number: '07' }));
     this.scaleTag = el('span', null, tag, '130M');
 
     this.rng = rng;

@@ -1,0 +1,3 @@
+# Listing media uploads separately through catalogue.json. The runtime is
+# procedural and does not load these marketing files.
+assets/marketing/

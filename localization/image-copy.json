@@ -1,0 +1,83 @@
+{
+  "fr": {
+    "title": "Claude of Duty",
+    "headlines": [
+      "Entrez dans la fusillade",
+      "Déjouez l’ennemi",
+      "Tout est généré par le code",
+      "L’original du Gauntlet Loop"
+    ]
+  },
+  "de": {
+    "title": "Claude of Duty",
+    "headlines": [
+      "Mitten ins Feuergefecht",
+      "Sei dem Gegner voraus",
+      "Alles aus Code",
+      "Das Gauntlet-Original"
+    ]
+  },
+  "es": {
+    "title": "Claude of Duty",
+    "headlines": [
+      "Entra en el tiroteo",
+      "Anticípate al enemigo",
+      "Generado con código",
+      "El original de Gauntlet Loop"
+    ]
+  },
+  "pt-BR": {
+    "title": "Claude of Duty",
+    "headlines": [
+      "Entre no tiroteio",
+      "Supere a estratégia inimiga",
+      "Gerado em código",
+      "O original do Gauntlet Loop"
+    ]
+  },
+  "id": {
+    "title": "Claude of Duty",
+    "headlines": [
+      "Terjun ke baku tembak",
+      "Ungguli taktik musuh",
+      "Dihasilkan lewat kode",
+      "Game orisinal Gauntlet Loop"
+    ]
+  },
+  "ja": {
+    "title": "クロード・オブ・デューティ",
+    "headlines": [
+      "銃撃戦に飛び込め",
+      "敵の一手先を読め",
+      "すべてをコードで生成",
+      "Gauntlet Loopの原点"
+    ]
+  },
+  "ko": {
+    "title": "클로드 오브 듀티",
+    "headlines": [
+      "총격전 속으로",
+      "적의 수를 읽어라",
+      "모든 것을 코드로 생성",
+      "Gauntlet Loop의 원작"
+    ]
+  },
+  "zh-Hans": {
+    "title": "克劳德使命",
+    "headlines": [
+      "投身激烈枪战",
+      "智胜敌军",
+      "万物皆由代码生成",
+      "Gauntlet Loop开山之作"
+    ]
+  },
+  "zh-Hant": {
+    "title": "克勞德使命",
+    "headlines": [
+      "投身激烈槍戰",
+      "智勝敵軍",
+      "萬物皆由程式碼生成",
+      "Gauntlet Loop開山之作"
+    ]
+  }
+}

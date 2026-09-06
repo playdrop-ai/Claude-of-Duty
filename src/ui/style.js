@@ -691,6 +691,15 @@ const CSS = `
 
 /* ============================================================== fadeouts */
 .ow-hidden { display:none !important; }
+
+/* Translated messages wrap within the existing safe-area overlays. */
+.ow-death-inner { max-width: min(90vw, 800px); }
+.ow-result-detail { overflow-wrap: anywhere; line-height: 1.5; }
+.ow-death-title { overflow-wrap: anywhere; }
+.ow-match { max-width: 90vw; }
+.cjk .ow-hud { letter-spacing: .02em; }
+.cjk .ow-death-title, .cjk .ow-menu h1, .cjk .ow-banner-t { letter-spacing: .04em; line-height: 1.25; }
+.cjk .ow-match, .cjk .ow-vt-lbl, .cjk .ow-reload, .cjk .ow-btn { letter-spacing: .02em; }
 `;
 
 const DEFS = `

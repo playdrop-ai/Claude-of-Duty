@@ -9,7 +9,7 @@
       :root { color-scheme: dark; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-      body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+      body { font-family: "Inter", "Helvetica Neue", Arial, "Noto Sans CJK JP", "Noto Sans CJK KR", "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
       #game { display: block; width: 100vw; height: 100dvh; touch-action: none; cursor: none; outline: none; }
       #boot {
         position: fixed;
@@ -56,7 +56,7 @@
         margin-top: 13px;
         font-size: clamp(36px, 7vw, 72px);
         font-weight: 900;
-        line-height: .92;
+        line-height: 1.08;
         letter-spacing: -.055em;
         text-transform: uppercase;
       }
@@ -156,6 +156,8 @@
         .touch-device .boot-status { font-size: 10px; }
         .touch-device .boot-note { font-size: 11px; }
       }
+      .cjk .boot-title { letter-spacing: 0; font-size: clamp(24px, 4vw, 48px); white-space: nowrap; }
+      .cjk .boot-status, .cjk .boot-eyebrow, .cjk #rotate-overlay h2 { letter-spacing: .03em; }
       @media (prefers-reduced-motion: reduce) {
         .boot-progress-bar { transition: none; }
         #boot[data-state="ready"] .boot-note { animation: none; opacity: 1; }
@@ -168,14 +170,14 @@
     <div id="rotate-overlay" role="status" aria-live="polite" hidden>
       <div>
         <div class="rotate-icon" aria-hidden="true"></div>
-        <h2>ROTATE TO PLAY</h2>
-        <p>Claude of Duty plays in landscape.</p>
+        <h2 data-i18n="rotate">ROTATE TO PLAY</h2>
+        <p data-i18n="landscape">Claude of Duty plays in landscape.</p>
       </div>
     </div>
     <div id="boot" role="dialog" aria-labelledby="boot-title" aria-busy="true" tabindex="-1">
       <div class="boot-panel">
-        <div class="boot-eyebrow">PROCEDURAL TACTICAL SYSTEM</div>
-        <div id="boot-title" class="boot-title">Claude of Duty</div>
+        <div class="boot-eyebrow" data-i18n="eyebrow">PROCEDURAL TACTICAL SYSTEM</div>
+        <div id="boot-title" class="boot-title" data-i18n="title">Claude of Duty</div>
         <div class="boot-rule">
           <div
             id="boot-progress"
@@ -189,8 +191,8 @@
             <div id="boot-progress-bar" class="boot-progress-bar"></div>
           </div>
         </div>
-        <div id="boot-status" class="boot-status" aria-live="polite">Establishing deployment link</div>
-        <div id="boot-note" class="boot-note">Generating every mesh, material, effect, and sound in code</div>
+        <div id="boot-status" class="boot-status" data-i18n="connecting" aria-live="polite">Establishing deployment link</div>
+        <div id="boot-note" class="boot-note" data-i18n="generationNote">Generating every mesh, material, effect, and sound in code</div>
       </div>
     </div>
     <script type="module" src="/src/playdrop-entry.js"></script>

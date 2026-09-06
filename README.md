@@ -13,6 +13,7 @@ This repository is a PlayDrop-maintained fork of [Matt Shumer's original Claude 
 - Gamepad and landscape touch controls.
 - Desktop and mobile rendering budgets.
 - Wave progression plus focused combat and destruction fixes.
+- Localized game UI and listing media in ten PlayDrop languages.
 
 Get updates [here](https://shumer.dev/newsletter).
 
@@ -30,6 +31,15 @@ npm run dev          # http://127.0.0.1:5173
 
 Click the canvas to lock the cursor. WASD move, mouse aim, LMB fire, RMB ADS,
 R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
+
+### Localization
+
+Hosted play uses `sdk.host.locale` for English, French, German, Spanish,
+Brazilian Portuguese, Indonesian, Japanese, Korean, Simplified Chinese, and
+Traditional Chinese. Standalone play uses the source language, English.
+Runtime strings live in `src/i18n/`; listing translations and media notes live
+in `localization/`. The title stays **Claude of Duty** in Latin-script locales;
+Japanese and Korean use transliterations, and Chinese uses 克劳德使命 / 克勞德使命.
 
 ### Controller support in this fork
 

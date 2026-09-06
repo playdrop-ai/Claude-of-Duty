@@ -1,9 +1,10 @@
+import { t as translate } from '../i18n/index.js';
 import { el, setText, setStyle, clamp, Pool } from './util.js';
 
 const SPAN_DEG = 120; // degrees visible across the strip
 const STRIP_W = 470; // css px at k=1, must match .ow-compass width
 const PPD = STRIP_W / SPAN_DEG;
-const CARD = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+const CARD = { 0: 'north', 45: 'northeast', 90: 'east', 135: 'southeast', 180: 'south', 225: 'southwest', 270: 'west', 315: 'northwest' };
 
 /**
  * Heading strip, top centre.
@@ -23,7 +24,8 @@ export class Compass {
     for (let a = 0; a < 720; a += 5) {
       const t = el('div', 'ow-tick' + (a % 15 === 0 ? ' maj' : ''), this.strip);
       t.style.left = `calc(${(a * PPD).toFixed(2)}px * var(--k))`;
-      const c = CARD[a % 360];
+      const key = CARD[a % 360];
+      const c = key ? translate(key) : null;
       if (c) {
         const l = el('div', 'ow-tick-l' + (c.length > 1 ? ' sub' : ''), this.strip, c);
         l.style.left = `calc(${(a * PPD).toFixed(2)}px * var(--k))`;
@@ -96,16 +98,16 @@ export class Compass {
 export class MatchBar {
   constructor(parent) {
     this.root = el('div', 'ow-match', parent);
-    this.mode = el('div', null, this.root, 'WAVE 1');
+    this.mode = el('div', null, this.root, translate('wave', { number: 1 }));
     el('div', 'sep', this.root);
     this.remaining = el('b', 'them', this.root, '6');
-    this.label = el('div', null, this.root, 'HOSTILES');
+    this.label = el('div', null, this.root, translate('hostiles'));
   }
 
   update(s) {
-    setText(this.mode, `WAVE ${s.wave}`);
+    setText(this.mode, translate('wave', { number: s.wave }));
     setText(this.remaining, s.remaining);
-    setText(this.label, s.remaining === 1 ? 'HOSTILE' : 'HOSTILES');
+    setText(this.label, s.remaining === 1 ? translate('hostile') : translate('hostiles'));
   }
 
   dispose() {

@@ -1,6 +1,6 @@
 {
   "name": "claude-of-duty",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Matt Shumer's Claude of Duty, the original Gauntlet Loop browser FPS, adapted for hosting on PlayDrop.",
   "scripts": {
     "dev": "vite",

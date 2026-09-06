@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import * as THREE from 'three';
 import { el, svg, setText, setStyle, setClass, Pool, ease, clamp, clamp01, metres } from './util.js';
 
@@ -114,7 +115,7 @@ export class WorldMarkers {
         const ring = el('div', 'ow-nade-ring', node);
         const core = el('div', 'ow-nade-core', node);
         nadeGlyph(core);
-        const label = el('div', 'ow-nade-label', node, 'GRENADE');
+        const label = el('div', 'ow-nade-label', node, t('grenade').toUpperCase());
         node._ring = ring;
         node._label = label;
         node._pos = new THREE.Vector3();
@@ -196,7 +197,7 @@ export class WorldMarkers {
       const p = project(node._pos, camera, w, h, margin);
       setStyle(node, 'transform', `translate(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px)`);
       const close = p.dist < 9;
-      setText(node._label, close ? 'DANGER CLOSE' : 'GRENADE');
+      setText(node._label, close ? t('dangerClose') : t('grenade').toUpperCase());
       // pulse rate ramps as the fuse burns down
       const remain = 1 - it.t / it.life;
       const rate = 2.2 + (1 - remain) * 5;

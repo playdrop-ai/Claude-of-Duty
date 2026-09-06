@@ -1,3 +1,4 @@
+import { t as translate } from '../i18n/index.js';
 import * as THREE from 'three';
 import { installStyles, removeStyles } from './style.js';
 import { el, clamp, clamp01, damp, setStyle, setText } from './util.js';
@@ -191,12 +192,12 @@ export class UiSystem {
       if (e.killed) {
         this._lastKillAt = ctx.time.elapsed;
         this.killfeed.push({
-          attacker: 'YOU',
-          victim: e.target?.name ?? e.name ?? 'ENEMY',
+          attacker: translate('you'),
+          victim: e.target?.name ?? e.name ?? translate('enemy'),
           headshot: !!e.headshot,
           mine: true,
         });
-        this.banner.show('Enemy Eliminated', e.headshot ? '+150 XP · HEADSHOT' : '+100 XP');
+        this.banner.show(translate('eliminated'), e.headshot ? translate('headshotXp') : translate('killXp'));
       }
     });
 
@@ -217,8 +218,8 @@ export class UiSystem {
     on('actor:death', (e) => {
       if (ctx.time.elapsed - this._lastKillAt < 0.3) return; // already credited
       this.killfeed.push({
-        attacker: e?.by?.name ?? 'ENEMY',
-        victim: e?.actor?.name ?? 'OPERATOR',
+        attacker: e?.by?.name ?? translate('enemy'),
+        victim: e?.actor?.name ?? translate('operator'),
         attackerFriendly: false,
       });
     });
@@ -295,7 +296,7 @@ export class UiSystem {
     this.resultTitle.id = 'wave-result-title';
     el('div', 'ow-death-rule', inner);
     this.resultDetail = el('div', 'ow-result-detail', inner);
-    this.resultButton = el('button', 'ow-death-button', inner, 'RETRY WAVE');
+    this.resultButton = el('button', 'ow-death-button', inner, translate('retryWave'));
     this.resultButton.type = 'button';
     const consume = (event) => event.stopPropagation();
     this.resultScreen.addEventListener('mousedown', consume);
@@ -322,11 +323,11 @@ export class UiSystem {
     this.markers.clear();
     this.banner.t = 1;
     this.resultScreen.classList.toggle('won', won);
-    setText(this.resultKicker, `WAVE ${number} ${won ? 'CLEARED' : 'FAILED'}`);
-    setText(this.resultTitle, won ? 'AREA SECURED' : 'KILLED IN ACTION');
+    setText(this.resultKicker, translate(won ? 'waveCleared' : 'waveFailed', { number }));
+    setText(this.resultTitle, won ? translate('areaSecured') : translate('killedInAction'));
     setText(this.resultDetail, won
-      ? `Wave ${number + 1} · ${Math.min(12, number + 6)} hostiles${number >= 7 ? ' · Tougher opponents' : ''} · Full resupply`
-      : 'Restart this wave · Full resupply · Terrain restored');
+      ? translate('nextWaveDetail', { number: number + 1, count: Math.min(12, number + 6), tougher: number >= 7 ? translate('tougher') : '' })
+      : translate('retryDetail'));
     this.resultButton.disabled = true;
     setStyle(this.resultScreen, 'display', 'flex');
     setStyle(this.resultScreen, 'opacity', '0');
@@ -477,7 +478,7 @@ export class UiSystem {
     const input = ctx.input;
     this.touchControls?.update();
     s.controllerLabels = input.inputMethod === 'gamepad' ? input.gamepad.labels : null;
-    const action = this.resultWon ? 'NEXT WAVE' : 'RETRY WAVE';
+    const action = this.resultWon ? translate('nextWave') : translate('retryWave');
     setText(this.resultButton, s.controllerLabels ? `${s.controllerLabels.confirm} · ${action}` : action);
 
     // ---- pause -----------------------------------------------------------

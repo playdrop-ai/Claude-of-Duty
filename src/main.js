@@ -1,3 +1,4 @@
+import { t, getLocale } from './i18n/index.js';
 import { Engine } from './core/engine.js';
 import { createConfig, selectQuality, selectRuntimeProfile } from './core/config.js';
 
@@ -46,20 +47,7 @@ const engine = new Engine({ canvas, config });
 window.__ENGINE__ = engine;
 engine.input.orientationPaused = window.__PLAYDROP_PORTRAIT__ === true;
 const boot = window.__PLAYDROP_BOOT__;
-const bootStage = {
-  render: 'Initializing renderer',
-  materials: 'Generating tactical materials',
-  sky: 'Baking procedural sky',
-  physics: 'Building collision world',
-  world: 'Assembling combat environment',
-  player: 'Preparing player controls',
-  weapons: 'Building weapon systems',
-  fx: 'Preparing tactical effects',
-  ai: 'Deploying AI soldiers',
-  ui: 'Loading mission interface',
-  audio: 'Preparing procedural audio',
-  waves: 'Preparing wave objectives',
-};
+
 
 // Registration order is irrelevant — Registry topo-sorts on static deps.
 engine
@@ -79,7 +67,7 @@ engine
 performance.mark('boot:engine-init:start');
 await engine.init({
   onProgress: ({ id, completed, total }) => {
-    boot.report(bootStage[id] ?? `Preparing ${id}`, 8 + (completed / total) * 64);
+    boot.report(t(`boot_${id}`), 8 + (completed / total) * 64);
   },
 });
 window.__PLAYDROP_SYNC_ORIENTATION__?.();
@@ -97,6 +85,7 @@ window.render_game_to_text = () => {
   const paused = engine.ctx.peek('ui')?.menu?.open === true;
   const waves = engine.ctx.get('waves');
   return JSON.stringify({
+    locale: getLocale(),
     coordinateSystem: 'Three.js world coordinates; +Y is up and the camera faces its local -Z axis.',
     mode: engine.error ? 'error' : window.__PLAYDROP_STARTED__ ? (waves.status === 'won' ? 'victory' : player?.dead ? 'gameover' : paused || !engine._running ? 'paused' : 'playing') : 'start',
     wave: { number: waves.number, status: waves.status, seconds: Number(waves.elapsed.toFixed(1)), ...waves.rules },
@@ -146,18 +135,18 @@ window.render_game_to_text = () => {
 // Compile gameplay shaders while loading to avoid first-use stalls. The capture
 // harness can opt out to compare pixels; prewarm preserves scene/time/RNG state.
 performance.mark('boot:shader-prewarm:start');
-boot?.report('Compiling shader programs', 72);
+boot?.report(t('compiling'), 72);
 const warmup = params.get('prewarm') === '0'
   ? { ok: false, reason: 'disabled by ?prewarm=0' }
   : await prewarm(engine, {
-      onProgress: (value) => boot?.report('Compiling shader programs', 72 + value * 25),
+      onProgress: (value) => boot?.report(t('compiling'), 72 + value * 25),
     });
 performance.mark('boot:shader-prewarm:end');
 performance.measure('boot:shader-prewarm', 'boot:shader-prewarm:start', 'boot:shader-prewarm:end');
 console.info('[boot] prewarm', warmup);
 window.__PREWARM__ = warmup;
 
-boot.report('Rendering first combat frame', 99);
+boot.report(t('firstFrame'), 99);
 engine.start();
 
 // The module resolves after the same three-frame handshake in both modes.

@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { el, setText, setStyle, ease, clamp01, damp } from './util.js';
 
 /** Interaction prompt: keycap + verb, with an optional hold-progress rule. */
@@ -6,7 +7,7 @@ export class Prompt {
     this.root = el('div', 'ow-prompt', parent);
     this.key = el('div', 'ow-key', this.root, 'F');
     const col = el('div', null, this.root);
-    this.txt = el('div', 'ow-prompt-txt', col, 'INTERACT');
+    this.txt = el('div', 'ow-prompt-txt', col, t('interact'));
     this.sub = el('div', 'ow-prompt-sub', col, '');
     const bar = el('div', null, col);
     bar.style.cssText =
@@ -26,7 +27,7 @@ export class Prompt {
   set(p) {
     this.active = true;
     setText(this.key, p.key ?? 'F');
-    setText(this.txt, (p.text ?? 'INTERACT').toUpperCase());
+    setText(this.txt, (p.text ?? t('interact')).toUpperCase());
     setText(this.sub, (p.sub ?? '').toUpperCase());
     setStyle(this.sub, 'display', p.sub ? '' : 'none');
     this.progress = p.progress ?? 0;

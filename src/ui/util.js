@@ -18,12 +18,12 @@
  */
 export const FONT_STACK =
   '"Avenir Next Condensed","DIN Alternate","Roboto Condensed","Arial Narrow",' +
-  '"Helvetica Neue",Inter,system-ui,-apple-system,sans-serif';
+  '"Helvetica Neue",Inter,"Noto Sans CJK JP","Noto Sans CJK KR","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif';
 
 /** Display face: the ammo count, banners, the menu title. */
 export const FONT_DISPLAY =
   '"DIN Condensed","Avenir Next Condensed","Oswald","Arial Narrow",' +
-  '"Helvetica Neue",Impact,system-ui,sans-serif';
+  '"Helvetica Neue",Impact,"Noto Sans CJK JP","Noto Sans CJK KR","PingFang SC","Microsoft YaHei",system-ui,sans-serif';
 
 export const FONT_MONO = '"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace';
 

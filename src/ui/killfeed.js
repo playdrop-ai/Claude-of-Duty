@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { el, svg, setText, setStyle, setClass, Pool, ease, clamp01 } from './util.js';
 
 function rifleIcon(parent) {
@@ -35,12 +36,12 @@ export class Killfeed {
       6,
       () => {
         const row = el('div', 'ow-kf-row');
-        const a = el('span', 'ow-kf-a', row, 'PLAYER');
+        const a = el('span', 'ow-kf-a', row, t('player'));
         const w = el('span', 'ow-kf-w', row);
         const hs = el('span', 'ow-kf-hs', w);
         skullIcon(hs);
         rifleIcon(w);
-        const v = el('span', 'ow-kf-v', row, 'ENEMY');
+        const v = el('span', 'ow-kf-v', row, t('enemy'));
         row._a = a;
         row._v = v;
         row._hs = hs;
@@ -57,8 +58,8 @@ export class Killfeed {
     it.life = this.life;
     const n = it.node;
     this.root.prepend(n); // newest on top
-    setText(n._a, (e.attacker ?? 'UNKNOWN').toUpperCase());
-    setText(n._v, (e.victim ?? 'UNKNOWN').toUpperCase());
+    setText(n._a, (e.attacker ?? t('unknown')).toUpperCase());
+    setText(n._v, (e.victim ?? t('unknown')).toUpperCase());
     setStyle(n._hs, 'display', e.headshot ? '' : 'none');
     setClass(n, 'mine', !!e.mine);
     setStyle(n._a, 'color', e.attackerFriendly === false ? 'var(--enemy)' : '');

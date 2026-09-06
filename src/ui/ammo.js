@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { el, svg, setText, setStyle, setClass, clamp01, damp, ease } from './util.js';
 
 const MAX_PIPS = 30;
@@ -58,7 +59,7 @@ export class AmmoPanel {
     this.pips = new Array(MAX_PIPS);
     for (let i = 0; i < MAX_PIPS; i++) this.pips[i] = el('b', null, this.mag);
 
-    this.reload = el('div', 'ow-reload', this.root, 'RELOADING');
+    this.reload = el('div', 'ow-reload', this.root, t('reloading'));
     const bar = el('div', 'ow-reload-bar', this.root);
     this.reloadFill = el('i', null, bar);
     this.reloadBar = bar;
@@ -68,7 +69,7 @@ export class AmmoPanel {
     this.weaponKeys = el('div', 'ow-weapon-keys', head);
     this.keySlots = ['1', '2', '3'].map((key) => el('span', 'ow-keycap', this.weaponKeys, key));
     this.controllerKey = el('span', 'ow-keycap', this.weaponKeys);
-    this.controllerKey.title = 'Next weapon';
+    this.controllerKey.title = t('nextWeapon');
     setStyle(this.controllerKey, 'display', 'none');
 
     this.punch = 0;
@@ -144,7 +145,7 @@ export class AmmoPanel {
     // --- reload state -----------------------------------------------------
     const outOfAmmo = ammo === 0 && Math.max(0, s.reserve | 0) === 0;
     setStyle(this.reload, 'display', reloading || outOfAmmo ? '' : 'none');
-    setText(this.reload, reloading ? 'RELOADING' : 'OUT OF AMMO');
+    setText(this.reload, reloading ? t('reloading') : t('outOfAmmo'));
     if (outOfAmmo) {
       // Pulse the terminal state so an unusable weapon is impossible to miss.
       const pulse = 0.55 + 0.45 * Math.abs(Math.sin((s.time ?? 0) * 3.8));

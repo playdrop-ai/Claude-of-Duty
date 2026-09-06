@@ -1,3 +1,4 @@
+import { t as translate } from '../i18n/index.js';
 import { el, setText, setStyle, damp, ease } from './util.js';
 
 /**
@@ -10,9 +11,9 @@ export class PauseMenu {
     this.root = el('div', 'ow-menu', parent);
     const inner = el('div', 'ow-menu-inner', this.root);
 
-    el('h1', null, inner, 'PAUSED');
+    el('h1', null, inner, translate('paused'));
     const btns = el('div', 'ow-btns', inner);
-    this.resumeBtn = el('button', 'ow-btn primary', btns, 'RESUME');
+    this.resumeBtn = el('button', 'ow-btn primary', btns, translate('resume'));
     this.resumeBtn.type = 'button';
     this.resumeBtn.addEventListener('click', () => this.close());
 
@@ -57,7 +58,7 @@ export class PauseMenu {
   /** Driven with unscaled time so the fade still runs while the game is frozen. */
   update(rawDt) {
     const input = this.ctx.input;
-    setText(this.resumeBtn, input.inputMethod === 'gamepad' ? `${input.gamepad.labels.confirm} · RESUME` : 'RESUME');
+    setText(this.resumeBtn, input.inputMethod === 'gamepad' ? `${input.gamepad.labels.confirm} · ${translate('resume')}` : translate('resume'));
     this.shown = damp(this.shown, this.open ? 1 : 0, 14, rawDt);
     if (this.shown < 0.004) {
       setStyle(this.root, 'display', 'none');

@@ -1,0 +1,385 @@
+{
+  "complete": true,
+  "orientation": "landscape",
+  "sourceDimensions": [
+    1280,
+    720
+  ],
+  "outputDimensions": [
+    1920,
+    1080
+  ],
+  "totalLocalizedVideoBytes": 46406641,
+  "originalEnglishVideoBytes": 18658362,
+  "review": "Complete timelines, input/cut sheets, first/poster/last frames and delivery composites inspected; localized text and action remain clear at full size. Normal game audio retained, including natural silence when victory pauses the game.",
+  "videos": [
+    {
+      "locale": "fr",
+      "file": "assets/marketing/playdrop/locales/fr/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 6,
+          "end": 14.2,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [],
+      "duration": 8.2,
+      "bytes": 3966509,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -3.7
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "afd462859b2fb7a209180cd543c6603d4bf00bc2284e8e0c164744753b446dfd",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 6,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "de",
+      "file": "assets/marketing/playdrop/locales/de/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 1,
+          "end": 4.2,
+          "speed": 1
+        },
+        {
+          "start": 5.7,
+          "end": 14.2,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [
+        3.2
+      ],
+      "duration": 11.733333,
+      "bytes": 6561696,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -3.5
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "5974804b7bdc637043aa83bc3b113c97e0ceeb2ffd186f9be03733e557707e2e",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 6,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "es",
+      "file": "assets/marketing/playdrop/locales/es/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 8.2,
+          "end": 16.3,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [],
+      "duration": 8.1,
+      "bytes": 4811576,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -3.7
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "c19a63224d7c35aa6a64aeeebf017535b0db138b1a42e731d9b2ac435181185d",
+      "recordedEnemyTakedowns": 5,
+      "visibleTakedownEvents": 3,
+      "ending": "enemy-takedown",
+      "browserErrors": []
+    },
+    {
+      "locale": "pt-BR",
+      "file": "assets/marketing/playdrop/locales/pt-BR/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 1,
+          "end": 9.1,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [],
+      "duration": 8.099,
+      "bytes": 4511718,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -5.2
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "b54db13e4c76f728d8b3881c296fa5adb13d88493f316aa97d650477b96c5a7d",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 6,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "id",
+      "file": "assets/marketing/playdrop/locales/id/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 1,
+          "end": 8.8,
+          "speed": 1
+        },
+        {
+          "start": 11.2,
+          "end": 14,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [
+        7.800000000000001
+      ],
+      "duration": 10.633008,
+      "bytes": 6217666,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -2.9
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "554aa87ff1a9e46581013cf04fe9517a1447aa75d2b08a599f91891205a882fb",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 5,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "ja",
+      "file": "assets/marketing/playdrop/locales/ja/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 1,
+          "end": 5,
+          "speed": 1
+        },
+        {
+          "start": 9.5,
+          "end": 17.2,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [
+        4
+      ],
+      "duration": 11.7,
+      "bytes": 6237024,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -4
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "3bc0cc78056276943f3f9446cd1720408c24ebff366a94d860a287baae6175fe",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 6,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "ko",
+      "file": "assets/marketing/playdrop/locales/ko/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 9.5,
+          "end": 17,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [],
+      "duration": 7.5,
+      "bytes": 4119216,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -4.6
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "6ed5e4cec0117bf3a75cfc585e3283cac472c5337bc95ec0c51ad2a41377b59c",
+      "recordedEnemyTakedowns": 5,
+      "visibleTakedownEvents": 3,
+      "ending": "enemy-takedown",
+      "browserErrors": []
+    },
+    {
+      "locale": "zh-Hans",
+      "file": "assets/marketing/playdrop/locales/zh-Hans/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 13,
+          "end": 21.3,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [],
+      "duration": 8.303,
+      "bytes": 3602705,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -3.8
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "7bfd9555440db30330ed2849bc0a9fb1257020ce282da2892e05538f89d61c1e",
+      "recordedEnemyTakedowns": 6,
+      "visibleTakedownEvents": 2,
+      "ending": "wave-clear",
+      "browserErrors": []
+    },
+    {
+      "locale": "zh-Hant",
+      "file": "assets/marketing/playdrop/locales/zh-Hant/video/gameplay.mp4",
+      "runtimeHash": "574e513678bcfe7a39d5e7834ec7603ffd5fb990e74fca4c0747d710630d32f2",
+      "ranges": [
+        {
+          "start": 1,
+          "end": 4.8,
+          "speed": 1
+        },
+        {
+          "start": 7.1,
+          "end": 10,
+          "speed": 1
+        },
+        {
+          "start": 15.3,
+          "end": 18.4,
+          "speed": 1
+        }
+      ],
+      "cutTimes": [
+        3.8,
+        6.7
+      ],
+      "duration": 9.866667,
+      "bytes": 6378531,
+      "encoder": {
+        "codec": "h264",
+        "preset": "medium",
+        "crf": 28,
+        "width": 1920,
+        "height": 1080,
+        "fps": "30/1",
+        "sar": "1:1"
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": "48000",
+        "channels": 2,
+        "maxVolumeDb": -0.9
+      },
+      "fullDecode": "passed",
+      "blackIntervals": 0,
+      "sha256": "93a5efdd53369e9bc8771ad718de55b36c03486659c78e86c259b7c2163f5159",
+      "recordedEnemyTakedowns": 5,
+      "visibleTakedownEvents": 5,
+      "ending": "enemy-takedown",
+      "browserErrors": []
+    }
+  ],
+  "allListingVideoBytes": 65065003
+}
