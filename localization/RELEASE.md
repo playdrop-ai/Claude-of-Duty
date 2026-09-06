@@ -28,3 +28,16 @@ Source listing hash:
 `a95bd4368311c89b01151873d8b24fe214dcbd6d1417c93690a5c0bdd9c7348d`.
 
 No PlayDrop platform files or account settings were changed.
+
+Published to production as version 1.0.1 on 2026-09-06 UTC from commit `ded14c7`.
+The upload's hosted zero-input/full-tape gameplay comparison passed. Public API
+verification then matched all ten listings to the release and confirmed all 61
+unique media URLs returned HTTP 200 with the expected file sizes (121,530,139
+bytes total). Detailed responses are retained in the local ignored
+`output/localization/live-verification.json`.
+
+Final live-page inspection was limited by repeated Chrome/CDP connection
+timeouts, including after reconnecting. The previously reported platform
+host-locale issue therefore remains unverified here; this release makes no
+claim that the platform issue is fixed. All ten game locales passed the local
+hosted browser harness before publishing.
