@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SkyPass, hdrTarget, floatTarget } from './fullscreen.js';
+import { SkyPass, hdrTarget } from './fullscreen.js';
 import {
   ATMO,
   ATMOSPHERE_GLSL,
@@ -238,7 +238,9 @@ export class SkyLuts {
   constructor(renderer, shared) {
     this.renderer = renderer;
 
-    this.transmittanceRt = floatTarget(256, 64, { name: 'sky-transmittance' });
+    // Transmittance is bounded to [0, 1]. Half-float preserves smooth filtering
+    // without requiring the optional Float32 linear extension on mobile Safari.
+    this.transmittanceRt = hdrTarget(256, 64, { name: 'sky-transmittance' });
     this.multiScatterRt = hdrTarget(32, 32, { name: 'sky-multiscatter' });
     // 384x192 rather than Hillaire's 192x108: one texel is then under a degree
     // of azimuth, which is the difference between a readable warm band around a

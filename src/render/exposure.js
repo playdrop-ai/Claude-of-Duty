@@ -141,7 +141,12 @@ export class AutoExposure {
       uLimits: { value: new THREE.Vector4(-4, 16, 1, 1.0) },
     });
 
-    const o = { type: THREE.FloatType, format: THREE.RGBAFormat, name: 'exposure' };
+    // Reduction reads exact texel centres; interpolation is unnecessary and
+    // makes Float32 textures incomplete on iOS without OES_texture_float_linear.
+    const o = {
+      type: THREE.FloatType, format: THREE.RGBAFormat, name: 'exposure',
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+    };
     this.rt64 = hdrTarget(64, 64, o);
     this.rt16 = hdrTarget(16, 16, o);
     this.rt4 = hdrTarget(4, 4, o);

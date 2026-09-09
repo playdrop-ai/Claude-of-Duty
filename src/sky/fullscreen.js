@@ -94,8 +94,3 @@ export function hdrTarget(w, h, opts = {}) {
   rt.texture.colorSpace = THREE.NoColorSpace;
   return rt;
 }
-
-/** Float32 target — used for the transmittance LUT, where banding shows. */
-export function floatTarget(w, h, opts = {}) {
-  return hdrTarget(w, h, { type: THREE.FloatType, ...opts });
-}
