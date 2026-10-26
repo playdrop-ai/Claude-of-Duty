@@ -202,7 +202,7 @@
       },
       "sourceRepository": "https://github.com/mshumer/Claude-of-Duty",
       "design": {
-        "genre": "game-genre/action",
+        "genre": "game-subgenre/fps",
         "coreGameplay": "core-gameplay/shoot",
         "perspective": "perspective/3d-first-person",
         "controls": "game-controls/keyboard",
