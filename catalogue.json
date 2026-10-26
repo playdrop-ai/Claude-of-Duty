@@ -202,7 +202,7 @@
       },
       "sourceRepository": "https://github.com/mshumer/Claude-of-Duty",
       "design": {
-        "genre": "game-genre/fps",
+        "genre": "game-genre/action",
         "coreGameplay": "core-gameplay/shoot",
         "perspective": "perspective/3d-first-person",
         "controls": "game-controls/keyboard",
@@ -211,11 +211,8 @@
       },
       "tags": [
         "game-genre/action",
-        "game-genre/shooter",
-        "interaction-mode/solo",
-        "interaction-mode/real-time",
-        "tone/cinematic",
-        "tone/gritty"
+        "game-subgenre/fps",
+        "game-style/3d"
       ],
       "releaseNotes": "Adds localized game UI, controls, store text, images, and gameplay videos for French, German, Spanish, Brazilian Portuguese, Indonesian, Japanese, Korean, Simplified Chinese, and Traditional Chinese.",
       "sourceLocale": "en",
